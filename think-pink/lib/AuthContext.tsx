@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
+import { API_BASE } from "../lib/api";
 
 interface User {
   userId: string;
@@ -9,16 +10,14 @@ interface User {
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  signIn: (userData: User) => void;
+  signIn: (userData: User) => Promise<void>;
   signOut: () => void;
 }
-
-
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   isLoading: true,
-  signIn: () => {},
+  signIn: async () => {},
   signOut: () => {},
 });
 
@@ -31,19 +30,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(timer);
   }, []);
 
-  const signIn = (userData: User) => {
+  const syncUser = async (userData: User) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/users/sync`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true",
+        },
+        body: JSON.stringify({
+          userId: userData.userId,
+          name: userData.name,
+          wallet: userData.wallet || "",
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Sync failed");
+    } catch (err: any) {
+      console.warn("User sync failed:", err?.message || err);
+    }
+  };
+
+  const signIn = async (userData: User) => {
     setUser(userData);
+    await syncUser(userData);
   };
 
   const signOut = () => {
     setUser(null);
   };
 
-  return (
-    <AuthContext.Provider value={{ user, isLoading, signIn, signOut }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={{ user, isLoading, signIn, signOut }}>{children}</AuthContext.Provider>;
 }
 
 export const useAuth = () => useContext(AuthContext);

@@ -18,7 +18,7 @@ export default function LoginScreen() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  
+
   const handleSignIn = async () => {
     if (!username || !password) {
       alert("Please enter both username and password");
@@ -27,25 +27,26 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
-      const url = `${API_BASE}/api/users/signin`;
+      const response = await fetch(`${API_BASE}/api/users/signin`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true",
+        },
+        body: JSON.stringify({
+          username: username.trim(),
+          password: password.trim(),
+        }),
+      });
 
-const response = await fetch(`${API_BASE}/api/users/signin`, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    "ngrok-skip-browser-warning": "true",
-  },
-  body: JSON.stringify({
-    username: username.trim(),
-    password: password.trim(),
-  }),
-});      const text = await response.text();
-
+      const contentType = response.headers.get("content-type") || "";
       let data: any;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        console.log("LOGIN non-JSON response:", text.slice(0, 200));
+
+      if (contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        console.warn("Server returned non-JSON:", text);
         throw new Error(`Server returned non-JSON (status ${response.status})`);
       }
 
@@ -53,16 +54,12 @@ const response = await fetch(`${API_BASE}/api/users/signin`, {
         throw new Error(data?.error || `Login failed (status ${response.status})`);
       }
 
-      console.log("Sign in successful:", data);
-
       await signIn({
         userId: data.userId,
         name: data.name,
         wallet: data.wallet,
       });
-      console.log("SIGNED IN DATA:", data);
 
-      // if your tabs index route is something else, change this to "/(tabs)/home" etc.
       router.replace("/(tabs)" as any);
     } catch (error: any) {
       console.log("LOGIN error:", error?.message || error);
@@ -80,6 +77,7 @@ const response = await fetch(`${API_BASE}/api/users/signin`, {
       <TextInput
         style={styles.input}
         placeholder="Username"
+        placeholderTextColor="#b97f92"
         value={username}
         onChangeText={setUsername}
         autoCapitalize="none"
@@ -88,6 +86,7 @@ const response = await fetch(`${API_BASE}/api/users/signin`, {
       <TextInput
         style={styles.input}
         placeholder="Password"
+        placeholderTextColor="#b97f92"
         secureTextEntry
         value={password}
         onChangeText={setPassword}

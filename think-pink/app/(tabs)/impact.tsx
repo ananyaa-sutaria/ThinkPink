@@ -8,7 +8,6 @@ import {
   Modal,
   TextInput,
   ScrollView,
-  Platform,
 } from "react-native";
 import { useProgress } from "../../lib/progressContext";
 import * as ImagePicker from "expo-image-picker";
@@ -20,13 +19,12 @@ import type { PlaceSuggestion, PlaceDetails } from "../../lib/impactClient";
 import { submitImpact } from "../../lib/impactClient";
 import { useAuth } from "../../lib/AuthContext";
 
-
 export default function ImpactScreen() {
   const { points, addPoints } = useProgress();
   const { user } = useAuth();
-const [deviceUserId, setDeviceUserId] = useState("");
-  const [wallet, setWallet] = useState("");
 
+  const [deviceUserId, setDeviceUserId] = useState("");
+  const [wallet, setWallet] = useState("");
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
 
   const [photo, setPhoto] = useState<{ uri: string; name: string; type: string } | null>(null);
@@ -36,52 +34,50 @@ const [deviceUserId, setDeviceUserId] = useState("");
   const [results, setResults] = useState<PlaceSuggestion[]>([]);
   const [chosen, setChosen] = useState<PlaceDetails | null>(null);
   const [loadingGeo, setLoadingGeo] = useState(false);
-    const [mySubmissions, setMySubmissions] = useState<any[]>([]);
+  const [mySubmissions, setMySubmissions] = useState<any[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
-  
 
   useEffect(() => {
-  (async () => {
-    const uid = await getOrCreateUserId();
-    setDeviceUserId(uid);
+    (async () => {
+      const uid = await getOrCreateUserId();
+      setDeviceUserId(uid);
 
-    const w = await getWalletAddress();
-    setWallet(w || "");
+      const w = await getWalletAddress();
+      setWallet(w || "");
 
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === "granted") {
-        const loc = await Location.getCurrentPositionAsync({});
-        setCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
-      }
-    } catch {}
-  })();
-}, []);
-const submitUserId = (user as any)?.userId || (user as any)?.id || deviceUserId;
-  // Autocomplete while typing (debounced)
-  useEffect(() => {
-  if (!user?.userId) return;
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === "granted") {
+          const loc = await Location.getCurrentPositionAsync({});
+          setCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+        }
+      } catch {}
+    })();
+  }, []);
+
+  const submitUserId = (user as any)?.userId || (user as any)?.id || deviceUserId;
 
   async function loadMySubmissions() {
-    try {
-      const res = await fetch(
-        `${API_BASE}/impact/mine/${user}`,
-        { headers: { "ngrok-skip-browser-warning": "true" } }
-      );
+    const uid = submitUserId;
+    if (!uid) return;
 
+    try {
+      const res = await fetch(`${API_BASE}/impact/mine/${uid}`, {
+        headers: { "ngrok-skip-browser-warning": "true" },
+      });
       const data = await res.json();
-      if (data.ok) {
-        setMySubmissions(data.submissions);
-      }
-    } catch (e) {
+      if (data.ok) setMySubmissions(data.submissions || []);
+    } catch {
       console.log("Failed to load submissions");
     }
   }
 
-  loadMySubmissions();
-}, [user]);
-  
+  useEffect(() => {
+    loadMySubmissions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [submitUserId]);
+
   useEffect(() => {
     if (!pickOpen) return;
 
@@ -118,7 +114,6 @@ const submitUserId = (user as any)?.userId || (user as any)?.id || deviceUserId;
     }
 
     const r = await ImagePicker.launchImageLibraryAsync({
-      // keep this since your project is currently using it
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.8,
     });
@@ -147,16 +142,7 @@ const submitUserId = (user as any)?.userId || (user as any)?.id || deviceUserId;
     if (!res.ok) throw new Error(data?.error || "Autocomplete failed");
     return (data?.suggestions || []) as PlaceSuggestion[];
   }
-async function loadMySubmissions() {
-  const uid = submitUserId;
-  if (!uid) return;
 
-  const res = await fetch(`${API_BASE}/impact/mine/${uid}`, {
-    headers: { "ngrok-skip-browser-warning": "true" },
-  });
-  const data = await res.json();
-  if (data.ok) setMySubmissions(data.submissions || []);
-}
   async function fetchPlaceDetails(placeId: string): Promise<PlaceDetails> {
     const res = await fetch(`${API_BASE}/impact/place-details`, {
       method: "POST",
@@ -172,51 +158,46 @@ async function loadMySubmissions() {
     return data.place as PlaceDetails;
   }
 
- async function submit() {
-  setStatusMsg("");
+  async function submit() {
+    setStatusMsg("");
 
-  
+    if (!photo) return setStatusMsg("Pick a photo first.");
+    if (!chosen) return setStatusMsg("Pick a donation location.");
+    if (!submitUserId) return setStatusMsg("Missing userId.");
 
-  if (!photo) return setStatusMsg("Pick a photo first.");
-  if (!chosen) return setStatusMsg("Pick a donation location.");
-  if (!submitUserId) return setStatusMsg("Missing userId.");
+    setSubmitting(true);
 
-  setSubmitting(true);
-  
-  try {
-    const form = new FormData();
+    try {
+      const form = new FormData();
+      form.append("userId", submitUserId);
+      form.append("walletAddress", wallet || "");
+      form.append("locationName", chosen.name);
+      form.append("locationLat", String(chosen.lat));
+      form.append("locationLng", String(chosen.lng));
+      form.append("photo", {
+        uri: photo.uri,
+        name: photo.name,
+        type: photo.type,
+      } as any);
 
-    form.append("userId", submitUserId);
-    form.append("walletAddress", wallet || "");
-    form.append("locationName", chosen.name);
-    form.append("locationLat", String(chosen.lat));
-    form.append("locationLng", String(chosen.lng));
+      await submitImpact(form);
+      await loadMySubmissions();
 
-    form.append("photo", {
-      uri: photo.uri,
-      name: photo.name,
-      type: photo.type,
-    } as any);
+      setStatusMsg("Submitted for approval ✅");
+      await addPoints(10);
 
-    await submitImpact(form);  // ← ONLY this call
-      loadMySubmissions();
-
-
-    setStatusMsg("Submitted for approval ✅");
-    await addPoints(10);
-
-    setPhoto(null);
-    setChosen(null);
-    setQuery("");
-    setResults([]);
-    setPickOpen(false);
-
-  } catch (e: any) {
-    setStatusMsg(e?.message || "Submit failed");
-  } finally {
-    setSubmitting(false);
+      setPhoto(null);
+      setChosen(null);
+      setQuery("");
+      setResults([]);
+      setPickOpen(false);
+    } catch (e: any) {
+      setStatusMsg(e?.message || "Submit failed");
+    } finally {
+      setSubmitting(false);
+    }
   }
-}
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: "#FDECEF" }}
@@ -256,18 +237,12 @@ async function loadMySubmissions() {
           </Text>
         ) : null}
 
-        {!coords ? (
-          <Text style={styles.small}>Location not available (still works, just less accurate).</Text>
-        ) : null}
+        {!coords ? <Text style={styles.small}>Location not available (still works, just less accurate).</Text> : null}
       </View>
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>3) Submit for approval</Text>
-        <Pressable
-          onPress={submit}
-          disabled={submitting}
-          style={[styles.primaryBtn, submitting && { opacity: 0.7 }]}
-        >
+        <Pressable onPress={submit} disabled={submitting} style={[styles.primaryBtn, submitting && { opacity: 0.7 }]}>
           <Text style={styles.primaryText}>{submitting ? "Submitting…" : "Submit proof"}</Text>
         </Pressable>
 
@@ -278,48 +253,28 @@ async function loadMySubmissions() {
           badge.
         </Text>
       </View>
+
       <View style={styles.card}>
-  <Text style={styles.sectionTitle}>My submissions</Text>
+        <Text style={styles.sectionTitle}>My submissions</Text>
 
-  <Pressable
-    onPress={async () => {
-      try {
-        const uid = (user as any)?.userId || (user as any)?.id || deviceUserId;
-        if (!uid) return;
+        <Pressable onPress={loadMySubmissions} style={styles.secondaryBtn}>
+          <Text style={styles.secondaryText}>Refresh</Text>
+        </Pressable>
 
-        const res = await fetch(`${API_BASE}/impact/mine/${uid}`, {
-          headers: { "ngrok-skip-browser-warning": "true" },
-        });
-        const data = await res.json();
-        if (data.ok) setMySubmissions(data.submissions || []);
-      } catch {}
-    }}
-    style={styles.secondaryBtn}
-  >
-    <Text style={styles.secondaryText}>Refresh</Text>
-  </Pressable>
-
-  {mySubmissions.length === 0 ? (
-    <Text style={styles.small}>No submissions yet.</Text>
-  ) : (
-    mySubmissions.map((s) => (
-      <View
-        key={s._id}
-        style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#F3D0DB" }}
-      >
-        <Text style={{ color: "#333" }}>{s.locationName}</Text>
-        <Text style={styles.small}>Status: {s.status}</Text>
-        {s.txMint ? <Text style={styles.small}>Mint tx: {String(s.txMint).slice(0, 18)}...</Text> : null}
+        {mySubmissions.length === 0 ? (
+          <Text style={styles.small}>No submissions yet.</Text>
+        ) : (
+          mySubmissions.map((s) => (
+            <View key={s._id} style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#F3D0DB" }}>
+              <Text style={{ color: "#333" }}>{s.locationName}</Text>
+              <Text style={styles.small}>Status: {s.status}</Text>
+              {s.txMint ? <Text style={styles.small}>Mint tx: {String(s.txMint).slice(0, 18)}...</Text> : null}
+            </View>
+          ))
+        )}
       </View>
-    ))
-  )}
-</View>
 
-      <Modal
-        visible={pickOpen}
-        animationType="slide"
-        onRequestClose={() => setPickOpen(false)}
-      >
+      <Modal visible={pickOpen} animationType="slide" onRequestClose={() => setPickOpen(false)}>
         <View style={{ flex: 1, backgroundColor: "#FDECEF", padding: 16, gap: 12 }}>
           <View style={styles.card}>
             <Text style={styles.title}>Search location</Text>
@@ -386,12 +341,11 @@ async function loadMySubmissions() {
           </View>
 
           {statusMsg ? (
-            <View style={[styles.card, { padding: 12 }]}>
+            <View style={[styles.card, { padding: 12 }]}> 
               <Text style={{ color: "#C62828" }}>{statusMsg}</Text>
             </View>
           ) : null}
         </View>
-    
       </Modal>
     </ScrollView>
   );

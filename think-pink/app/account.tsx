@@ -4,8 +4,6 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import { getWalletAddress, setWalletAddress } from "../lib/walletStore";
-
-// If you have AuthContext, keep it. If not, delete these two lines and remove signOut usage.
 import { useAuth } from "../lib/AuthContext";
 
 export default function AccountScreen() {
@@ -17,9 +15,8 @@ export default function AccountScreen() {
   const [password, setPassword] = useState<string>("");
 
   useEffect(() => {
-    // load from local storage first
     getWalletAddress().then((w) => setWallet(w || user?.wallet || ""));
-  }, []);
+  }, [user?.wallet]);
 
   const shortWallet = useMemo(() => {
     if (!wallet) return "";
@@ -27,7 +24,6 @@ export default function AccountScreen() {
   }, [wallet]);
 
   async function onSaveLocal() {
-    // Save wallet locally so Badges page can use it
     await setWalletAddress(wallet.trim());
     Alert.alert("Saved", "Saved wallet locally ✅");
   }
@@ -51,7 +47,6 @@ export default function AccountScreen() {
     <View style={styles.container}>
       <Text style={styles.header}>Account Settings</Text>
 
-      {/* Profile */}
       <View style={styles.card}>
         <Text style={styles.label}>Username</Text>
         <TextInput style={styles.input} value={username} onChangeText={setUsername} />
@@ -66,7 +61,6 @@ export default function AccountScreen() {
         />
       </View>
 
-      {/* Wallet */}
       <View style={styles.card}>
         <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
           <Text style={styles.label}>Solana Wallet</Text>
@@ -101,7 +95,6 @@ export default function AccountScreen() {
         </View>
       </View>
 
-      {/* Actions */}
       <Pressable onPress={() => router.back()} style={styles.backButton}>
         <Ionicons name="arrow-back" size={16} color="#D81B60" />
         <Text style={styles.backText}>Back</Text>

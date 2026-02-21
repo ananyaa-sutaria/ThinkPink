@@ -5,17 +5,25 @@ import { useAuth } from "../lib/AuthContext";
 export default function AccountButton() {
   const router = useRouter();
   const { user } = useAuth();
-  const displayName = user?.name?.trim() || "User";
+  const displayName = user?.name?.trim() || "Guest";
+
+  const handlePress = () => {
+    if (user) {
+      router.push("/account");
+    } else {
+      router.push("/login");
+    }
+  };
 
   return (
     <Pressable
-      onPress={() => router.push("/account")}
+      onPress={handlePress}
       style={{
         maxWidth: "52%",
         paddingHorizontal: 12,
         paddingVertical: 8,
         borderRadius: 999,
-        backgroundColor: "#C7547F", // match header background
+        backgroundColor: "#C7547F",
         elevation: 5,
       }}
       accessibilityRole="button"
