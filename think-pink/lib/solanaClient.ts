@@ -1,5 +1,5 @@
 import axios from "axios";
-import { API_BASE } from "./config";
+import { API_BASE } from "./api";
 
 export async function awardBadge(walletAddress: string) {
   const res = await axios.post(`${API_BASE}/solana/award-badge`, { walletAddress });

@@ -6,7 +6,7 @@ const CLUSTER = "devnet";
 const connection = new Connection(clusterApiUrl(CLUSTER), "confirmed");
 
 // your server base
-const API_BASE = "http://localhost:5000";
+import { API_BASE } from "./api";
 
 export async function redeemPointsWithWallet(params: {
   walletPubkey: string;
