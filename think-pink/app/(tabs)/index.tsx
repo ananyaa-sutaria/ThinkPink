@@ -14,6 +14,7 @@ import { Calendar } from "react-native-calendars";
 
 import { API_BASE } from "../../lib/api";
 import { useAuth } from "../../lib/AuthContext";
+import { useProgress } from "../../lib/progressContext";
 import { getItem, setItem } from "../../lib/storage";
 import { getOrCreateUserId } from "../../lib/userId";
 
@@ -70,6 +71,10 @@ function addDaysISO(iso: string, days: number) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function medicationTakenKey(uid: string, dateISO: string) {
+  return `medications:taken:${uid}:${dateISO}`;
+}
+
 function computePeriodDays(logs: Record<string, CycleLog>, todayISO: string) {
   const starts = Object.values(logs)
     .filter((l) => l.periodStart && l.dateISO)
@@ -97,6 +102,92 @@ function computePeriodDays(logs: Record<string, CycleLog>, todayISO: string) {
       safety += 1;
     }
   }
+
+  return out;
+}
+
+function computeExpectedNextPeriodDays(logs: Record<string, CycleLog>, todayISO: string) {
+  const starts = Object.values(logs)
+    .filter((l) => l.periodStart && l.dateISO)
+    .map((l) => l.dateISO)
+    .sort();
+  const ends = Object.values(logs)
+    .filter((l) => l.periodEnd && l.dateISO)
+    .map((l) => l.dateISO)
+    .sort();
+
+  if (starts.length === 0) return new Set<string>();
+
+  const cycleLengths: number[] = [];
+  for (let i = 1; i < starts.length; i += 1) {
+    const len = diffDays(starts[i - 1], starts[i]);
+    if (len >= 18 && len <= 45) cycleLengths.push(len);
+  }
+  const avgCycle = cycleLengths.length
+    ? Math.round(cycleLengths.reduce((sum, n) => sum + n, 0) / cycleLengths.length)
+    : CYCLE_LENGTH_DAYS;
+  const cycleLen = Math.min(35, Math.max(21, avgCycle));
+
+  const periodDurations: number[] = [];
+  for (let i = 0; i < starts.length; i += 1) {
+    const start = starts[i];
+    const nextStart = starts[i + 1];
+    const end = ends.find((e) => e >= start && (!nextStart || e < nextStart));
+    if (!end) continue;
+    const days = diffDays(start, end) + 1;
+    if (days >= 1 && days <= 10) periodDurations.push(days);
+  }
+  const avgDuration = periodDurations.length
+    ? Math.round(periodDurations.reduce((sum, n) => sum + n, 0) / periodDurations.length)
+    : 5;
+  const duration = Math.min(8, Math.max(3, avgDuration));
+
+  let expectedStart = addDaysISO(starts[starts.length - 1], cycleLen);
+  while (expectedStart < todayISO) {
+    expectedStart = addDaysISO(expectedStart, cycleLen);
+  }
+
+  const out = new Set<string>();
+  for (let i = 0; i < duration; i += 1) {
+    out.add(addDaysISO(expectedStart, i));
+  }
+  return out;
+}
+
+function buildPeriodMarks(
+  dates: Set<string>,
+  color: string,
+  textColor = "#250921"
+): Record<string, { color: string; textColor: string; startingDay?: boolean; endingDay?: boolean }> {
+  const out: Record<string, { color: string; textColor: string; startingDay?: boolean; endingDay?: boolean }> = {};
+  const sorted = Array.from(dates).sort();
+  if (sorted.length === 0) return out;
+
+  let rangeStart = sorted[0];
+  let prev = sorted[0];
+
+  const commitRange = (start: string, end: string) => {
+    let cursor = start;
+    while (cursor <= end) {
+      out[cursor] = {
+        color,
+        textColor,
+        startingDay: cursor === start,
+        endingDay: cursor === end,
+      };
+      cursor = addDaysISO(cursor, 1);
+    }
+  };
+
+  for (let i = 1; i < sorted.length; i += 1) {
+    const cur = sorted[i];
+    if (diffDays(prev, cur) !== 1) {
+      commitRange(rangeStart, prev);
+      rangeStart = cur;
+    }
+    prev = cur;
+  }
+  commitRange(rangeStart, prev);
 
   return out;
 }
@@ -129,6 +220,7 @@ function deriveCycleForDate(dateISO: string, logs: Record<string, CycleLog>, per
 
 export default function Home() {
   const { user } = useAuth();
+  const { addPoints } = useProgress();
 
   const [deviceUserId, setDeviceUserId] = useState("");
   const userId = (user as any)?.userId || (user as any)?.id || deviceUserId;
@@ -151,6 +243,7 @@ export default function Home() {
   const [medName, setMedName] = useState("");
   const [selectedMedSchedule, setSelectedMedSchedule] = useState<string[]>([]);
   const [medErr, setMedErr] = useState("");
+  const [takenTodayByMedId, setTakenTodayByMedId] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     (async () => {
@@ -227,6 +320,32 @@ export default function Home() {
     };
   }, [userId]);
 
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+
+    (async () => {
+      const raw = await getItem(medicationTakenKey(userId, isoToday()));
+      if (cancelled) return;
+
+      if (!raw) {
+        setTakenTodayByMedId({});
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(raw);
+        setTakenTodayByMedId(parsed && typeof parsed === "object" ? parsed : {});
+      } catch {
+        setTakenTodayByMedId({});
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
   async function persistMedications(next: Medication[]) {
     if (!userId) return;
     setMedications(next);
@@ -263,6 +382,16 @@ export default function Home() {
     await persistMedications(next);
   }
 
+  async function markMedicationTakenToday(medId: string) {
+    if (!userId) return;
+    if (takenTodayByMedId[medId]) return;
+
+    const next = { ...takenTodayByMedId, [medId]: true };
+    setTakenTodayByMedId(next);
+    await setItem(medicationTakenKey(userId, isoToday()), JSON.stringify(next));
+    await addPoints(10);
+  }
+
   // when date changes, populate modal fields
   useEffect(() => {
     const l = logsByDate[selectedDate];
@@ -294,32 +423,39 @@ export default function Home() {
 
   const todayISO = isoToday();
   const periodDays = useMemo(() => computePeriodDays(logsByDate, todayISO), [logsByDate, todayISO]);
+  const expectedNextPeriodDays = useMemo(
+    () => computeExpectedNextPeriodDays(logsByDate, todayISO),
+    [logsByDate, todayISO]
+  );
 
   // calendar markings (color coding)
   const markedDates = useMemo(() => {
-    const out: Record<string, any> = {};
-    const allDates = new Set<string>([...Object.keys(logsByDate), ...Array.from(periodDays), todayISO]);
+    const out: Record<string, any> = buildPeriodMarks(expectedNextPeriodDays, "#FCE9F2");
 
-    for (const dateISO of allDates) {
-      const log = logsByDate[dateISO];
-      const isPeriod = periodDays.has(dateISO);
-      const isToday = dateISO === todayISO;
+    const periodMarks = buildPeriodMarks(periodDays, "#F7B7CC");
+    for (const [dateISO, mark] of Object.entries(periodMarks)) {
+      out[dateISO] = mark;
+    }
 
-      const dots: Array<{ key: string; color: string }> = [];
-      if (log?.spotting) dots.push({ key: "spotting", color: "#A33572" });
-      if (log?.periodStart) dots.push({ key: "period-start", color: "#D81B60" });
-      if (log?.periodEnd) dots.push({ key: "period-end", color: "#8E1450" });
+    out[todayISO] = {
+      ...(out[todayISO] || {}),
+      color: "#C7547F",
+      textColor: "#FFFFFF",
+      startingDay: true,
+      endingDay: true,
+    };
 
+    for (const [dateISO, log] of Object.entries(logsByDate)) {
+      if (!log?.spotting) continue;
       out[dateISO] = {
-        selected: isPeriod || isToday,
-        selectedColor: isToday ? "#C7547F" : isPeriod ? "#F7B7CC" : "#efcfe3",
-        selectedTextColor: "#250921",
-        dots,
+        ...(out[dateISO] || {}),
+        marked: true,
+        dotColor: "#A33572",
       };
     }
 
     return out;
-  }, [logsByDate, periodDays, todayISO]);
+  }, [logsByDate, periodDays, expectedNextPeriodDays, todayISO]);
 
   async function saveLog() {
     if (!userId) {
@@ -434,12 +570,11 @@ export default function Home() {
               setSelectedDate(day.dateString);
               setLogOpen(true);
             }}
-            markingType="multi-dot"
+            markingType="period"
             markedDates={markedDates}
             theme={{
               backgroundColor: "#ffffff",
               calendarBackground: "#ffffff",
-              selectedDayBackgroundColor: "#efcfe3",
               todayTextColor: "#C7547F",
               arrowColor: "#C7547F",
               monthTextColor: "#250921",
@@ -457,10 +592,23 @@ export default function Home() {
           </View>
         ) : null}
 
-        <View style={{ marginTop: 10, gap: 6 }}>
-          <Text style={{ color: "#777", fontSize: 12 }}>
-            Colors: period days (light pink), today (dark pink), spotting/start/end markers (dots).
-          </Text>
+        <View style={styles.legendRow}>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendSwatch, { backgroundColor: "#F7B7CC" }]} />
+            <Text style={styles.legendText}>Period</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendSwatch, { backgroundColor: "#FCE9F2" }]} />
+            <Text style={styles.legendText}>Expected</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendSwatch, { backgroundColor: "#C7547F" }]} />
+            <Text style={styles.legendText}>Today</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: "#A33572" }]} />
+            <Text style={styles.legendText}>Spotting</Text>
+          </View>
         </View>
       </View>
 
@@ -493,6 +641,18 @@ export default function Home() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.medName}>{med.name}</Text>
                 <Text style={styles.medTime}>{med.schedule || "Schedule not set"}</Text>
+                <Pressable
+                  onPress={() => markMedicationTakenToday(med.id)}
+                  disabled={!!takenTodayByMedId[med.id]}
+                  style={[
+                    styles.takenButton,
+                    takenTodayByMedId[med.id] ? styles.takenButtonDone : styles.takenButtonActive,
+                  ]}
+                >
+                  <Text style={styles.takenButtonText}>
+                    {takenTodayByMedId[med.id] ? "Taken today ✓" : "Taken today (+10)"}
+                  </Text>
+                </Pressable>
               </View>
               <Pressable onPress={() => removeMedication(med.id)} style={styles.removeButton}>
                 <Text style={styles.removeButtonText}>Remove</Text>
@@ -719,6 +879,34 @@ const styles = StyleSheet.create({
   calendar: {
     borderRadius: 15,
   },
+  legendRow: {
+    marginTop: 8,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  legendItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  legendSwatch: {
+    width: 12,
+    height: 12,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: "#E5B7CC",
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 99,
+  },
+  legendText: {
+    color: "#777",
+    fontSize: 12,
+    fontFamily: "Onest",
+  },
   input: {
     borderWidth: 1,
     borderColor: "#F48FB1",
@@ -798,6 +986,24 @@ const styles = StyleSheet.create({
   medEmpty: { fontFamily: "Onest", fontSize: 14, color: "#555" },
   medName: { fontFamily: "Onest-Bold", fontSize: 16, color: "#250921" },
   medTime: { fontFamily: "Onest", fontSize: 12, color: "#250921" },
+  takenButton: {
+    marginTop: 8,
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    alignSelf: "flex-start",
+  },
+  takenButtonActive: {
+    backgroundColor: "#D81B60",
+  },
+  takenButtonDone: {
+    backgroundColor: "#2E7D32",
+  },
+  takenButtonText: {
+    color: "#FFF",
+    fontFamily: "Onest-Bold",
+    fontSize: 12,
+  },
   removeButton: {
     backgroundColor: "#F48FB1",
     borderRadius: 999,

@@ -220,7 +220,7 @@ async function loadMySubmissions() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: "#FDECEF" }}
-      contentContainerStyle={{ padding: 16, gap: 12 }}
+      contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 110 }}
     >
       <View style={styles.card}>
         <Text style={styles.title}>Impact</Text>

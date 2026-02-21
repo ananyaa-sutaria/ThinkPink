@@ -207,7 +207,7 @@ export default function BadgesRewardsScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: "#FDECEF" }}
-      contentContainerStyle={{ padding: 16, gap: 12 }}
+      contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 110 }}
     >
       <View style={{ backgroundColor: "#FFF", padding: 16, borderRadius: 20, gap: 8 }}>
         <Text style={{ color: "#333", fontSize: 18 }}>Badges + Rewards</Text>

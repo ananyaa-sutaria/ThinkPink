@@ -85,7 +85,7 @@ export default function LearnScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: "#FDECEF" }}
-      contentContainerStyle={{ padding: 16, gap: 12 }}
+      contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 110 }}
     >
       <View style={{ backgroundColor: "#FFF", borderRadius: 20, padding: 16, gap: 6 }}>
         <Text style={{ color: "#333", fontSize: 18, fontWeight: "800" }}>
