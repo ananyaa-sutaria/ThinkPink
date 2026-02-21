@@ -4,6 +4,7 @@ import { fetchQuiz, QuizChoice, QuizPayload } from "../../lib/quizClient";
 import { useProgress } from "../../lib/progressContext";
 
 const PASS_SCORE = 4; // out of 5
+const { setCycleBadgeUnlockedLive, addPoints } = useProgress();
 
 export default function LearnScreen() {
   const { setCycleBadgeUnlockedLive } = useProgress();
@@ -70,6 +71,7 @@ export default function LearnScreen() {
     if (s >= PASS_SCORE) {
       setUnlocked(true);
       await setCycleBadgeUnlockedLive(true);
+      await addPoints(100);
     }
   }
 
