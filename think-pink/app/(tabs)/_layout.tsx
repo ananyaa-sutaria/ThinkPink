@@ -47,8 +47,6 @@ export default function TabsLayout() {
               ? "school"
               : route.name === "impact"
               ? "heart"
-              : route.name === "rewards"
-              ? "gift"
               : "ribbon";
           return <Ionicons name={name as any} size={size} color={color} />;
         },
@@ -59,9 +57,6 @@ export default function TabsLayout() {
       <Tabs.Screen name="index" options={{ title: "Home" }} />
       <Tabs.Screen name="log" options={{ title: "Log" }} />
       <Tabs.Screen name="badges" options={{ title: "Badges" }} />
-
-      {/* add this once you create app/(tabs)/rewards.tsx */}
-      <Tabs.Screen name="rewards" options={{ title: "Rewards" }} />
     </Tabs>
   );
 }
