@@ -42,11 +42,10 @@ export default function LogChatScreen() {
 
 
     try {
-      const snapshot = await buildUserSnapshot(); // local for now
-      const res = await cycleChat({ message: text, snapshot });
-
-
-      const botMsg: Msg = { id: `a_${Date.now()}`, role: "assistant", text: res.answer };
+      const message = userMsg;
+      const snapshot = await buildUserSnapshot();
+      const r = await cycleChat({ message: userMsg.text, snapshot });
+      const botMsg: Msg = { id: `a_${Date.now()}`, role: "assistant", text:r.answer };
       setMessages((prev) => [...prev, botMsg]);
     } catch (e: any) {
       const botMsg: Msg = {
