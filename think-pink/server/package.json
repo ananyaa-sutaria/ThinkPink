@@ -19,6 +19,8 @@
     "expo-linking": "~8.0.11",
     "expo-random": "^14.0.1",
     "express": "^4.18.2",
-    "mongoose": "^8.0.0"
+    "mongoose": "^8.0.0",
+    "multer": "^2.0.2",
+    "node-fetch": "^3.3.2"
   }
 }
