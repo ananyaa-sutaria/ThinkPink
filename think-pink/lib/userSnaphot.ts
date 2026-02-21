@@ -6,7 +6,7 @@ export async function buildUserSnapshot(): Promise<UserSnapshot> {
   const userId = await getOrCreateUserId();
   const todayISO = new Date().toISOString().slice(0, 10);
 
-  let recentLogs: UserSnapshot["recentLogs"] = [];
+  let recentLogs: any[] = [];
   try {
     const rec = await fetchRecentCycleLogs({ userId, limit: 60 });
     recentLogs = rec.logs;
@@ -14,9 +14,5 @@ export async function buildUserSnapshot(): Promise<UserSnapshot> {
     recentLogs = [];
   }
 
-  return {
-    userId,
-    todayISO,
-    recentLogs,
-  };
+  return { userId, todayISO, recentLogs };
 }

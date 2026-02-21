@@ -123,6 +123,7 @@ app.post("/solana/award-badge", async (req, res) => {
 // --------------------
 // AI Routes
 // --------------------
+
 app.post("/ai/cycle-chat", async (req, res) => {
   try {
     const { message, snapshot } = req.body || {};
@@ -130,41 +131,63 @@ app.post("/ai/cycle-chat", async (req, res) => {
 
     const userId = snapshot?.userId || "guest";
 
-    // optional: pull recent logs if you have CycleLog model wired
-    let recentLogs = [];
-    try {
-      if (typeof CycleLog !== "undefined") {
-        recentLogs = await CycleLog.find({ userId }).sort({ dateISO: -1 }).limit(60).lean();
-      }
-    } catch {}
+    // Pull recent logs from Mongo
+    const recentLogs = await CycleLog.find({ userId })
+  .sort({ dateISO: -1 })
+  .limit(60)
+  .lean();
 
-    const mergedSnapshot = { ...(snapshot || {}), recentLogs };
+console.log("CYCLE-CHAT userId:", userId);
+console.log("CYCLE-CHAT recentLogs count:", recentLogs.length);
+console.log("CYCLE-CHAT most recent log:", recentLogs[0]);
+
+const lastStart = recentLogs.find(
+  (l) => l.periodStart === true || l.periodStart === "true"
+);const lastPeriodStartISO = lastStart?.dateISO;
+
+const enrichedSnapshot = {
+  ...(snapshot || {}),
+  recentLogs,
+  lastPeriodStartISO,
+};
+
+    // Hard-answer last period if asked (fast + reliable)
+    const lower = String(message).toLowerCase();
+    if (lower.includes("last period") || lower.includes("last cycle")) {
+      if (enrichedSnapshot.lastPeriodStartISO) {
+        return res.json({
+          answer: `Your most recent logged period start was ${enrichedSnapshot.lastPeriodStartISO}.`,
+        });
+      }
+      return res.json({
+        answer:
+          "I don’t have a logged period start date yet. Tap a day and mark it as Period Start so I can track this for you.",
+      });
+    }
 
     const model = genAI.getGenerativeModel({ model: "gemini-3-pro-preview" });
 
     const prompt = `
-You are "ThinkPink", a supportive cycle + nutrition assistant.
-Use ONLY the provided snapshot as your source of truth.
-If the answer isn't in the snapshot, say you don't have enough logged data yet and suggest what to track.
-Never diagnose. Keep answers short (2-5 sentences). If helpful, add 1 small bullet list.
-No bold formatting.
+You are ThinkPink, a supportive cycle + nutrition assistant.
+Use ONLY the snapshot data as truth. If it’s not in the snapshot, say you don’t have enough data yet.
+No diagnosis. Keep answers 2–5 sentences, no bold.
 
-Special rules:
-- If user asks about "day N", use mergedSnapshot.recentLogs filtered by cycleDay == N and summarize typical mood/energy/symptoms.
-- If fewer than 2 logs match, say not enough data yet.
-- If user asks "when was my last period", use mergedSnapshot.lastPeriodStartISO if present, otherwise say you don't know yet.
-- If user asks what to eat today, suggest general supportive foods based on todayPhase if present.
+Interpretation rules:
+- "day N of my cycle": use recentLogs where cycleDay == N. If <2 matches, say not enough data.
+- "how do I usually feel in luteal/follicular/ovulation/menstrual": filter recentLogs by phase and summarize typical mood/energy/symptoms.
+- "what should I eat today": use todayPhase if present; otherwise give a general balanced suggestion.
+- "when was my last period": use lastPeriodStartISO.
 
-SNAPSHOT:
-${JSON.stringify(mergedSnapshot, null, 2)}
+SNAPSHOT JSON:
+${JSON.stringify(enrichedSnapshot, null, 2)}
 
-USER:
+USER QUESTION:
 ${message}
 `;
 
     const result = await model.generateContent(prompt);
     const answer = result.response.text().trim();
-
+   
     res.json({ answer });
   } catch (e) {
     console.error("CYCLE CHAT ERROR:", e);
