@@ -98,6 +98,55 @@ app.post("/api/users/signin", async (req, res) => {
   }
 });
 
+// server/index.js
+app.post("/api/users/change-password", async (req, res) => {
+  try {
+    const { userId, newPassword } = req.body;
+
+    if (!userId || !newPassword) {
+      return res.status(400).json({ error: "userId and newPassword are required" });
+    }
+
+    const updated = await User.findOneAndUpdate(
+      { userId },
+      { $set: { password: newPassword } },
+      { new: true }
+    );
+
+    if (!updated) return res.status(404).json({ error: "User not found" });
+
+    res.json({ ok: true, message: "Password updated successfully" });
+  } catch (err) {
+    console.error("Change password error:", err);
+    res.status(500).json({ error: "Failed to update password" });
+  }
+});
+
+app.post("/api/users/sync", async (req, res) => {
+  try {
+    const { userId, name, wallet, password } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required" });
+    }
+
+    const updatedUser = await User.findOneAndUpdate(
+      { userId },
+      { $set: { name, wallet, password } },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json(updatedUser);
+  } catch (err) {
+    console.error("SYNC ERROR:", err);
+    res.status(500).json({ error: "Failed to sync user" });
+  }
+});
+
 // --------------------
 // Solana Routes
 // --------------------
