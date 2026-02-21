@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, Pressable, StyleSheet, Platform, Linking } from "react-native";
+import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
 import { useProgress } from "../../lib/progressContext";
 import * as Location from "expo-location";
 
+type Coords = { latitude: number; longitude: number };
+
 export default function ImpactScreen() {
   const { points } = useProgress();
-  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [coords, setCoords] = useState<Coords | null>(null);
   const [permDenied, setPermDenied] = useState(false);
 
   const isWeb = Platform.OS === "web";
@@ -22,17 +24,6 @@ export default function ImpactScreen() {
     })();
   }, []);
 
-  const mapsUrl = useMemo(() => {
-    if (!coords) return null;
-    const { latitude, longitude } = coords;
-    return `https://www.google.com/maps/search/menstrual+product+donation+center/@${latitude},${longitude},13z`;
-  }, [coords]);
-
-  async function openMaps() {
-    if (!mapsUrl) return;
-    await Linking.openURL(mapsUrl);
-  }
-
   return (
     <View style={{ flex: 1, backgroundColor: "#FDECEF", padding: 16, gap: 12 }}>
       <View style={{ backgroundColor: "#FFF", borderRadius: 20, padding: 16 }}>
@@ -45,21 +36,16 @@ export default function ImpactScreen() {
 
         {permDenied ? (
           <Text style={{ color: "#C62828" }}>
-            Location permission denied. You can still open a donation search manually.
+            Location permission denied. You can still use the app without the map.
           </Text>
         ) : !coords ? (
           <Text style={{ color: "#555" }}>Getting your location…</Text>
         ) : isWeb ? (
-          <>
-            <View style={styles.webMapPlaceholder}>
-              <Text style={{ color: "#555" }}>
-                Map preview is available on mobile. On web, open the map in a new tab.
-              </Text>
-            </View>
-            <Pressable onPress={openMaps} style={styles.primaryBtn}>
-              <Text style={styles.primaryText}>Open Donation Map</Text>
-            </Pressable>
-          </>
+          <View style={styles.webMapPlaceholder}>
+            <Text style={{ color: "#555" }}>
+              Map preview is available on mobile only (Expo web doesn’t support react-native-maps).
+            </Text>
+          </View>
         ) : (
           <NativeMap coords={coords} />
         )}
@@ -73,11 +59,19 @@ export default function ImpactScreen() {
 }
 
 /**
- * Native-only map: web will NEVER import react-native-maps because we require it here.
+ * IMPORTANT:
+ * - No top-level import from react-native-maps anywhere.
+ * - Only require it at runtime AND only on native.
  */
-function NativeMap({ coords }: { coords: { latitude: number; longitude: number } }) {
-  const MapView = useMemo(() => require("react-native-maps").default, []);
-  const Marker = useMemo(() => require("react-native-maps").Marker, []);
+function NativeMap({ coords }: { coords: Coords }) {
+  const MapStuff = useMemo(() => {
+    // require only runs on native because this component never renders on web
+    const maps = require("react-native-maps");
+    return {
+      MapView: maps.default,
+      Marker: maps.Marker,
+    };
+  }, []);
 
   const region = {
     latitude: coords.latitude,
@@ -85,6 +79,9 @@ function NativeMap({ coords }: { coords: { latitude: number; longitude: number }
     latitudeDelta: 0.05,
     longitudeDelta: 0.05,
   };
+
+  const MapView = MapStuff.MapView;
+  const Marker = MapStuff.Marker;
 
   return (
     <View style={styles.mapContainer}>
