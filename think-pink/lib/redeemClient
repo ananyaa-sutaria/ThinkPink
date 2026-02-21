@@ -1,0 +1,38 @@
+import { Connection, clusterApiUrl } from "@solana/web3.js";
+import { buildBurnPointsTx } from "./solanaRedeem";
+import { signAndSendMobile } from "./walletMobile";
+
+const CLUSTER = "devnet";
+const connection = new Connection(clusterApiUrl(CLUSTER), "confirmed");
+
+// your server base
+const API_BASE = "http://localhost:5000";
+
+export async function redeemPointsWithWallet(params: {
+  walletPubkey: string;
+  amount: number;
+}) {
+  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+
+  const tx = await buildBurnPointsTx({
+    ownerPubkey: params.walletPubkey,
+    amount: params.amount,
+    recentBlockhash: blockhash,
+    feePayer: params.walletPubkey,
+  });
+
+  const signature = await signAndSendMobile({ connection, tx });
+
+  // optional: tell server to verify and record redemption
+  // (highly recommended for demo credibility)
+  await fetch(`${API_BASE}/solana/verify-redeem`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ signature, walletAddress: params.walletPubkey, amount: params.amount }),
+  }).catch(() => {});
+
+  return {
+    signature,
+    explorer: `https://explorer.solana.com/tx/${signature}?cluster=${CLUSTER}`,
+  };
+}

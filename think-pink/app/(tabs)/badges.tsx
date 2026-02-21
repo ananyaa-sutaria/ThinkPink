@@ -4,6 +4,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { awardBadge } from "../../lib/solanaClient";
 import { getWalletAddress } from "../../lib/walletStore";
 import { useProgress } from "../../lib/progressContext";
+import { redeemPointsWeb } from "../../lib/redeemClientWeb";
 
 type MintResult = {
   signature: string;
@@ -14,7 +15,7 @@ type MintResult = {
 
 export default function Badges() {
   const { cycleBadgeUnlocked, points, addPoints, refresh, hydrated } = useProgress();
-
+    const [alreadyMinted, setAlreadyMinted] = useState(false);
   const [wallet, setWallet] = useState<string>("");
   const [minting, setMinting] = useState(false);
   const [mintResult, setMintResult] = useState<MintResult | null>(null);
@@ -55,21 +56,37 @@ export default function Badges() {
       setMintResult(r);
       // optional bonus for minting on-chain
       await addPoints(25);
+      setAlreadyMinted(true);
     } catch (e: any) {
-      setErr(e?.message || "Mint failed");
+        const msg = e?.message || "Mint failed";
+    setErr(msg.includes("409") ? "You already minted this badge." : msg);
+
     } finally {
       setMinting(false);
     }
   }
 
   async function redeem(cost: number) {
-    setErr("");
-    if (points < cost) {
-      setErr("Not enough points.");
-      return;
-    }
+  setErr("");
+
+  try {
+    // user signs burn in Phantom (web)
+    const r = await redeemPointsWeb(cost);
+
+    // update local points so UI reflects immediately
     await addPoints(-cost);
+
+    // show the tx link using your existing mintResult UI area
+    setMintResult({
+      signature: r.signature,
+      explorer: r.explorer,
+      badgeMint: "POINTS_BURN",
+      recipientAta: "",
+    } as any);
+  } catch (e: any) {
+    setErr(e?.message || "Redeem failed");
   }
+}
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: "#FDECEF" }} contentContainerStyle={{ padding: 16, gap: 12 }}>
@@ -93,7 +110,7 @@ export default function Badges() {
 
         <Pressable
           onPress={onMint}
-          disabled={minting || !cycleBadgeUnlocked}
+            disabled={minting || alreadyMinted}
           style={{
             backgroundColor: minting ? "#F48FB1" : cycleBadgeUnlocked ? "#D81B60" : "#F7B6C8",
             borderRadius: 999,
