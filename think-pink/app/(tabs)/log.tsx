@@ -1,3 +1,50 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { View, Text, TextInput, Pressable, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
+import { askCycleChat } from "../../lib/chatClient";
+import { buildUserSnapshot } from "../../lib/userSnaphot";
+
+type Msg = { id: string; role: "user" | "assistant"; text: string };
+
+export default function LogChatScreen() {
+  const [messages, setMessages] = useState<Msg[]>([
+    {
+      id: "m0",
+      role: "assistant",
+      text:
+        "Ask me anything about your cycle data.\n\nExamples:\n• When was my last period?\n• How do I usually feel in luteal?\n• What should I eat today?",
+    },
+  ]);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
+  }, [messages.length]);
+
+  const canSend = useMemo(() => input.trim().length > 0 && !sending, [input, sending]);
+
+  async function onSend() {
+    if (!canSend) return;
+
+    const text = input.trim();
+    setInput("");
+
+    const userMsg: Msg = { id: `u_${Date.now()}`, role: "user", text };
+    setMessages((prev) => [...prev, userMsg]);
+    setSending(true);
+
+    try {
+      const snapshot = await buildUserSnapshot(); // local for now
+      const res = await askCycleChat({ message: text, snapshot });
+
+      const botMsg: Msg = { id: `a_${Date.now()}`, role: "assistant", text: res.answer };
+      setMessages((prev) => [...prev, botMsg]);
+    } catch (e: any) {
+      const botMsg: Msg = {
+        id: `a_${Date.now()}`,
+        role: "assistant",
+        text: "I couldn’t answer that right now. Try again in a moment.",
 import { useMemo, useState, useEffect  } from "react";
 import { View, Text, Modal, Pressable, TextInput, ScrollView } from "react-native";
 import { Calendar } from "react-native-calendars";
@@ -38,6 +85,9 @@ export default function LogScreen() {
           text: { color: "#333" },
         },
       };
+      setMessages((prev) => [...prev, botMsg]);
+    } finally {
+      setSending(false);
     }
 
     // Selected day styling
@@ -406,129 +456,88 @@ function DayLogModal({
   };
 
   return (
-    <Modal visible={open} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.25)", justifyContent: "flex-end" }}>
-        <View style={{ backgroundColor: "#FFFFFF", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 16, maxHeight: "85%" }}>
-          <View style={{ alignItems: "center", marginBottom: 10 }}>
-            <View style={{ width: 52, height: 5, borderRadius: 999, backgroundColor: "#EEE" }} />
-          </View>
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: "#FDECEF" }}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      <View style={{ padding: 16, gap: 10, flex: 1 }}>
+        <View style={{ backgroundColor: "#FFF", borderRadius: 20, padding: 16, gap: 6 }}>
+          <Text style={{ color: "#333", fontSize: 18, fontWeight: "800" }}>Ask ThinkPink</Text>
+          <Text style={{ color: "#555" }}>
+            Personalized answers based on your cycle logs. No diagnosis — just insights.
+          </Text>
+        </View>
 
-          <ScrollView contentContainerStyle={{ gap: 12, paddingBottom: 18 }}>
-            <View style={{ padding: 12, borderRadius: 16, backgroundColor: colors.fill, borderWidth: 1, borderColor: colors.accent }}>
-              <Text style={{ color: "#333", fontSize: 16, fontWeight: "700" }}>
-                {date} • {phase} • Day {cycleDay}
-              </Text>
-              <Text style={{ color: "#333", marginTop: 4 }}>
-                Tap options below to log your day.
-              </Text>
+        <ScrollView
+          ref={scrollRef}
+          style={{ flex: 1 }}
+          contentContainerStyle={{ gap: 10, paddingBottom: 10 }}
+        >
+          {messages.map((m) => (
+            <View
+              key={m.id}
+              style={{
+                alignSelf: m.role === "user" ? "flex-end" : "flex-start",
+                backgroundColor: m.role === "user" ? "#D81B60" : "#FFF",
+                borderRadius: 18,
+                paddingVertical: 10,
+                paddingHorizontal: 12,
+                maxWidth: "85%",
+              }}
+            >
+              <Text style={{ color: m.role === "user" ? "#FFF" : "#333" }}>{m.text}</Text>
             </View>
+          ))}
 
-            <Row>
-              <Toggle label="Period started" on={periodStart} onPress={() => setPeriodStart(!periodStart)} />
-              <Toggle label="Period ended" on={periodEnd} onPress={() => setPeriodEnd(!periodEnd)} />
-            </Row>
-
-            <Row>
-              <Toggle label="Spotting" on={spotting} onPress={() => setSpotting(!spotting)} />
-            </Row>
-
-            <View style={{ gap: 8 }}>
-              <Text style={{ color: "#333", fontWeight: "700" }}>Symptoms</Text>
-              <SymptomChips options={symptomOptions} selected={symptoms} onToggle={toggleSymptom} />
+          {sending ? (
+            <View
+              style={{
+                alignSelf: "flex-start",
+                backgroundColor: "#FFF",
+                borderRadius: 18,
+                paddingVertical: 10,
+                paddingHorizontal: 12,
+              }}
+            >
+              <Text style={{ color: "#555" }}>Thinking…</Text>
             </View>
+          ) : null}
+        </ScrollView>
 
-            <View style={{ gap: 8 }}>
-              <Text style={{ color: "#333", fontWeight: "700" }}>Mood (1–5)</Text>
-              <Stepper value={mood} setValue={setMood} />
-            </View>
-
-            <View style={{ gap: 8 }}>
-              <Text style={{ color: "#333", fontWeight: "700" }}>Energy (1–5)</Text>
-              <Stepper value={energy} setValue={setEnergy} />
-            </View>
-
-            <View style={{ gap: 8 }}>
-              <Text style={{ color: "#333", fontWeight: "700" }}>Notes</Text>
-              <TextInput
-                value={notes}
-                onChangeText={setNotes}
-                placeholder="Anything you noticed today…"
-                placeholderTextColor="#999"
-                multiline
-                style={{
-                  minHeight: 90,
-                  borderWidth: 1,
-                  borderColor: "#F48FB1",
-                  borderRadius: 16,
-                  padding: 12,
-                  color: "#333",
-                  backgroundColor: "#FFF",
-                }}
-              />
-            </View>
-
-            <Row>
-              <Pressable
-                onPress={onClose}
-                style={{ flex: 1, paddingVertical: 12, borderRadius: 999, alignItems: "center", backgroundColor: "#FDECEF" }}
-              >
-                <Text style={{ color: "#333", fontWeight: "700" }}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                onPress={save}
-                style={{ flex: 1, paddingVertical: 12, borderRadius: 999, alignItems: "center", backgroundColor: "#D81B60" }}
-              >
-                <Text style={{ color: "#FFF", fontWeight: "700" }}>Save</Text>
-              </Pressable>
-            </Row>
-          </ScrollView>
+        <View
+          style={{
+            flexDirection: "row",
+            gap: 10,
+            alignItems: "center",
+            backgroundColor: "#FFF",
+            padding: 10,
+            borderRadius: 18,
+            borderWidth: 1,
+            borderColor: "#F48FB1",
+          }}
+        >
+          <TextInput
+            value={input}
+            onChangeText={setInput}
+            placeholder="Ask about your cycle…"
+            placeholderTextColor="#999"
+            style={{ flex: 1, color: "#333" }}
+            onSubmitEditing={onSend}
+          />
+          <Pressable
+            onPress={onSend}
+            disabled={!canSend}
+            style={{
+              backgroundColor: canSend ? "#D81B60" : "#F48FB1",
+              paddingVertical: 10,
+              paddingHorizontal: 14,
+              borderRadius: 999,
+            }}
+          >
+            <Text style={{ color: "#FFF" }}>{sending ? "…" : "Send"}</Text>
+          </Pressable>
         </View>
       </View>
-    </Modal>
-  );
-}
-
-function Row({ children }: { children: any }) {
-  return <View style={{ flexDirection: "row", gap: 10 }}>{children}</View>;
-}
-
-function Toggle({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={{
-        flex: 1,
-        paddingVertical: 12,
-        paddingHorizontal: 12,
-        borderRadius: 16,
-        backgroundColor: on ? "#D81B60" : "#FFFFFF",
-        borderWidth: 1,
-        borderColor: on ? "#D81B60" : "#F48FB1",
-      }}
-    >
-      <Text style={{ color: on ? "#FFFFFF" : "#333", fontWeight: "700" }}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function Stepper({ value, setValue }: { value: number; setValue: (n: number) => void }) {
-  return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-      <Pressable
-        onPress={() => setValue(clamp(value - 1, 1, 5))}
-        style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: "#FDECEF", alignItems: "center", justifyContent: "center" }}
-      >
-        <Text style={{ color: "#333", fontSize: 18, fontWeight: "800" }}>−</Text>
-      </Pressable>
-      <View style={{ flex: 1, height: 44, borderRadius: 14, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#F48FB1", alignItems: "center", justifyContent: "center" }}>
-        <Text style={{ color: "#333", fontWeight: "800" }}>{value}</Text>
-      </View>
-      <Pressable
-        onPress={() => setValue(clamp(value + 1, 1, 5))}
-        style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: "#FDECEF", alignItems: "center", justifyContent: "center" }}
-      >
-        <Text style={{ color: "#333", fontSize: 18, fontWeight: "800" }}>+</Text>
-      </Pressable>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
