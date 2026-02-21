@@ -1,39 +1,34 @@
-import * as SecureStore from "expo-secure-store";
-import { Platform } from "react-native";
+// lib/progressStore.ts
+import { getItem, setItem } from "./storage";
 
-const KEY = "cycle_literacy_unlocked";
+const KEY_BADGE_UNLOCKED = "tp_badge_cycle_lit_unlocked";
+const KEY_BADGE_MINTED = "tp_badge_cycle_lit_minted";
+const KEY_POINTS = "tp_points_balance";
 
-async function webSet(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {}
-}
-
-async function webGet(key: string) {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-export async function setCycleBadgeUnlocked(value: boolean) {
-  const v = value ? "true" : "false";
-
-  if (Platform.OS === "web") {
-    await webSet(KEY, v);
-    return;
-  }
-
-  await SecureStore.setItemAsync(KEY, v);
-}
-
-export async function getCycleBadgeUnlocked() {
-  if (Platform.OS === "web") {
-    const v = await webGet(KEY);
-    return v === "true";
-  }
-
-  const v = await SecureStore.getItemAsync(KEY);
+export async function getCycleBadgeUnlocked(): Promise<boolean> {
+  const v = await getItem(KEY_BADGE_UNLOCKED);
   return v === "true";
+}
+
+export async function setCycleBadgeUnlocked(v: boolean): Promise<void> {
+  await setItem(KEY_BADGE_UNLOCKED, String(v));
+}
+
+export async function getCycleBadgeMinted(): Promise<boolean> {
+  const v = await getItem(KEY_BADGE_MINTED);
+  return v === "true";
+}
+
+export async function setCycleBadgeMinted(v: boolean): Promise<void> {
+  await setItem(KEY_BADGE_MINTED, String(v));
+}
+
+export async function getPoints(): Promise<number> {
+  const v = await getItem(KEY_POINTS);
+  const n = Number(v || "0");
+  return Number.isFinite(n) ? n : 0;
+}
+
+export async function setPoints(n: number): Promise<void> {
+  await setItem(KEY_POINTS, String(Math.max(0, Math.floor(n))));
 }
