@@ -29,10 +29,8 @@ export default function ImpactScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: "#FDECEF", padding: 16, gap: 12 }}>
       <View style={{ backgroundColor: "#FFF", borderRadius: 20, padding: 16, gap: 8 }}>
-        <Text style={{ color: "#333", fontSize: 18, fontWeight: "800" }}>Impact</Text>
-        <Text style={{ color: "#555" }}>
-          Find menstrual product donation centers near you and log donations.
-        </Text>
+        <Text style={{ fontSize: 18, fontWeight: "800", color: "#333" }}>Impact</Text>
+        {/* <Text style={{ color: "#555" }}>Your points: {points}</Text> */}
       </View>
 
       <View style={{ backgroundColor: "#FFF", borderRadius: 20, padding: 16, gap: 10 }}>

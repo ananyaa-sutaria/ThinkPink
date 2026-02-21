@@ -6,13 +6,13 @@ import { useProgress } from "../../lib/progressContext";
 const PASS_SCORE = 4; // out of 5
 
 export default function LearnScreen() {
-  const { setCycleBadgeUnlockedLive } = useProgress();
 
   const [loading, setLoading] = useState(false);
   const [quiz, setQuiz] = useState<QuizPayload | null>(null);
   const [answers, setAnswers] = useState<Record<string, QuizChoice | null>>({});
   const [submitted, setSubmitted] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
+  const { setCycleBadgeUnlockedLive, addPoints } = useProgress();
 
   const score = useMemo(() => {
     if (!quiz || !submitted) return null;
@@ -70,6 +70,7 @@ export default function LearnScreen() {
     if (s >= PASS_SCORE) {
       setUnlocked(true);
       await setCycleBadgeUnlockedLive(true);
+      await addPoints(100);
     }
   }
 
