@@ -38,7 +38,6 @@ const RPC_URL =
 const connection = new Connection(RPC_URL, "confirmed");
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
 // --------------------
 // Mongo
 // --------------------
@@ -235,6 +234,38 @@ Rules:
 });
 
 // Gemini daily insight
+app.post("/ai/cycle-chat", async (req, res) => {
+  try {
+    const { message, snapshot } = req.body;
+
+    const model = genAI.getGenerativeModel({ model: "gemini-3-pro-preview" });
+
+    const prompt = `
+You are "ThinkPink", a supportive cycle + nutrition assistant.
+Use ONLY the provided snapshot as your source of truth.
+If the answer isn't in the snapshot, say you don't have enough logged data yet and suggest what to track.
+Never diagnose. Keep answers short (2-5 sentences). If helpful, add 1 small bullet list.
+
+Special rule:
+- If the user asks about "day N", use snapshot.recentLogs filtered by cycleDay == N and summarize typical mood/energy/symptoms.
+- If fewer than 2 logs match, say not enough data yet.
+
+SNAPSHOT:
+${JSON.stringify(snapshot, null, 2)}
+
+USER QUESTION:
+${message}
+`;
+
+    const result = await model.generateContent(prompt);
+    const text = result.response.text().trim();
+
+    res.json({ answer: text });
+  } catch (e) {
+    console.error("CYCLE CHAT ERROR:", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
 app.post("/ai/daily-insight", async (req, res) => {
   try {
     const {
