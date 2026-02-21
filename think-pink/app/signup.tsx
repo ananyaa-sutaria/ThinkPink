@@ -57,10 +57,10 @@ export default function SignUpScreen() {
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Create Account</Text>
-      <TextInput style={styles.input} placeholder="Username" value={username} onChangeText={setUsername} autoCapitalize="none" />
-      <TextInput style={styles.input} placeholder="Solana Wallet (Optional)" value={wallet} onChangeText={setWallet} />
-      <TextInput style={styles.input} placeholder="Password" secureTextEntry value={password} onChangeText={setPassword} />
-
+      <TextInput style={styles.input} placeholder="Username" placeholderTextColor="#b97f92" value={username} onChangeText={setUsername} autoCapitalize="none" />
+      <TextInput style={styles.input} placeholder="Password" placeholderTextColor="#b97f92" secureTextEntry value={password} onChangeText={setPassword} />
+      <TextInput style={styles.input} placeholder="Solana Wallet (Optional)" placeholderTextColor="#b97f92" value={wallet} onChangeText={setWallet} />
+      
       <Pressable onPress={handleSignUp} style={styles.button} disabled={loading}>
         {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Join ThinkPink</Text>}
       </Pressable>
