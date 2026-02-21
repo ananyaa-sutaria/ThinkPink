@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:5000";
+import { postJSON } from "./http";
 
 export type UserSnapshot = {
   userId: string;
@@ -6,11 +6,8 @@ export type UserSnapshot = {
   todayPhase?: string;
   lastPeriodStartISO?: string;
   dietaryPrefs?: string;
-
   cycleDayToday?: number;
-
   typicalByPhase?: Record<string, { topMoods: string[]; topSymptoms: string[] }>;
-
   recentLogs?: Array<{
     dateISO: string;
     cycleDay?: number;
@@ -25,14 +22,10 @@ export type UserSnapshot = {
   }>;
 };
 
-export async function askCycleChat(params: { message: string; snapshot: UserSnapshot }) {
-  const res = await fetch(`${API_BASE}/ai/cycle-chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-  });
+export type CycleChatPayload = { message: string; snapshot: UserSnapshot };
+export type CycleChatResponse = { answer: string };
 
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.error || "Chat failed");
-  return data as { answer: string };
+export function cycleChat(payload: CycleChatPayload) {
+  // IMPORTANT: server expects { message, snapshot } not { params: { ... } }
+  return postJSON<CycleChatResponse>("/ai/cycle-chat", payload);
 }
