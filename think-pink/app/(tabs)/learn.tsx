@@ -4,16 +4,15 @@ import { fetchQuiz, QuizChoice, QuizPayload } from "../../lib/quizClient";
 import { useProgress } from "../../lib/progressContext";
 
 const PASS_SCORE = 4; // out of 5
-const { setCycleBadgeUnlockedLive, addPoints } = useProgress();
 
 export default function LearnScreen() {
-  const { setCycleBadgeUnlockedLive } = useProgress();
 
   const [loading, setLoading] = useState(false);
   const [quiz, setQuiz] = useState<QuizPayload | null>(null);
   const [answers, setAnswers] = useState<Record<string, QuizChoice | null>>({});
   const [submitted, setSubmitted] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
+  const { setCycleBadgeUnlockedLive, addPoints } = useProgress();
 
   const score = useMemo(() => {
     if (!quiz || !submitted) return null;

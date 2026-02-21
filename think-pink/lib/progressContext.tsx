@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useCallback, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { getCycleBadgeUnlocked, setCycleBadgeUnlocked } from "./progressStore";
 import { getPoints, setPoints } from "./pointsStore";
 
@@ -6,8 +6,8 @@ type ProgressContextValue = {
   cycleBadgeUnlocked: boolean;
   hydrated: boolean;
   points: number;
-  addPoints: (n: number) => Promise<void>;
   setCycleBadgeUnlockedLive: (v: boolean) => Promise<void>;
+  addPoints: (n: number) => Promise<void>;
   refresh: () => Promise<void>;
 };
 
@@ -15,21 +15,15 @@ const ProgressContext = createContext<ProgressContextValue | null>(null);
 
 export function ProgressProvider({ children }: { children: React.ReactNode }) {
   const [cycleBadgeUnlockedState, setCycleBadgeUnlockedState] = useState(false);
+  const [pointsState, setPointsState] = useState(0);
   const [hydrated, setHydrated] = useState(false);
-  const [points, setPointsState] = useState(0);
+
   const refresh = useCallback(async () => {
-  const v = await getCycleBadgeUnlocked();
-  const p = await getPoints();
-  setCycleBadgeUnlockedState(v);
-  setPointsState(p);
-  setHydrated(true);
-}, []);
-const addPoints = useCallback(async (n: number) => {
-  const current = await getPoints();
-  const updated = current + n;
-  await setPoints(updated);
-  setPointsState(updated);
-}, []);
+    const [badge, pts] = await Promise.all([getCycleBadgeUnlocked(), getPoints()]);
+    setCycleBadgeUnlockedState(badge);
+    setPointsState(pts);
+    setHydrated(true);
+  }, []);
 
   const setCycleBadgeUnlockedLive = useCallback(async (v: boolean) => {
     setCycleBadgeUnlockedState(v);
@@ -37,21 +31,28 @@ const addPoints = useCallback(async (n: number) => {
     await setCycleBadgeUnlocked(v);
   }, []);
 
+  const addPoints = useCallback(async (n: number) => {
+    const current = await getPoints();
+    const updated = Math.max(0, current + n);
+    await setPoints(updated);
+    setPointsState(updated);
+  }, []);
+
   useEffect(() => {
     refresh();
   }, [refresh]);
 
   const value = useMemo(
-  () => ({
-    cycleBadgeUnlocked: cycleBadgeUnlockedState,
-    hydrated,
-    points,
-    addPoints,
-    setCycleBadgeUnlockedLive,
-    refresh,
-  }),
-  [cycleBadgeUnlockedState, hydrated, points]
-);
+    () => ({
+      cycleBadgeUnlocked: cycleBadgeUnlockedState,
+      hydrated,
+      points: pointsState,
+      setCycleBadgeUnlockedLive,
+      addPoints,
+      refresh,
+    }),
+    [cycleBadgeUnlockedState, hydrated, pointsState, setCycleBadgeUnlockedLive, addPoints, refresh]
+  );
 
   return <ProgressContext.Provider value={value}>{children}</ProgressContext.Provider>;
 }
