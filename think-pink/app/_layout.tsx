@@ -1,10 +1,14 @@
 import { Stack } from "expo-router";
+import { ProgressProvider } from "../lib/progressContext";
 
 export default function RootLayout() {
   return (
-    <Stack screenOptions={{ headerTitle: "" }}>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="account" options={{ title: "Account" }} />
-    </Stack>
+    <ProgressProvider>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(tabs)" />
+        {/* if you have other screens like account, keep them here */}
+        <Stack.Screen name="account" /> 
+      </Stack>
+    </ProgressProvider>
   );
 }
