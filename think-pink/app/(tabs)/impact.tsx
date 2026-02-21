@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, Pressable, StyleSheet, Platform, Linking } from "react-native";
+import { ScrollView, View, Text, Pressable, StyleSheet, Platform, Linking } from "react-native";
 import { useProgress } from "../../lib/progressContext";
 import * as Location from "expo-location";
 
-export default function ImpactScreen() {
+export default function Impact() {
   const { points } = useProgress();
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [permDenied, setPermDenied] = useState(false);
@@ -34,25 +34,27 @@ export default function ImpactScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#FDECEF", padding: 16, gap: 12 }}>
-      <View style={{ backgroundColor: "#FFF", borderRadius: 20, padding: 16 }}>
-        <Text style={{ fontSize: 18, fontWeight: "800", color: "#333" }}>Impact</Text>
-        <Text style={{ color: "#555", marginTop: 4 }}>Your points: {points}</Text>
+    <ScrollView contentContainerStyle={styles.content}>
+      {/* Points Card */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Impact</Text>
+        <Text style={styles.cardText}>Your points: {points}</Text>
       </View>
 
-      <View style={{ backgroundColor: "#FFF", borderRadius: 20, padding: 16, gap: 10 }}>
-        <Text style={{ color: "#333", fontWeight: "800" }}>Map</Text>
+      {/* Map Card */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Map</Text>
 
         {permDenied ? (
-          <Text style={{ color: "#C62828" }}>
+          <Text style={styles.warningText}>
             Location permission denied. You can still open a donation search manually.
           </Text>
         ) : !coords ? (
-          <Text style={{ color: "#555" }}>Getting your location…</Text>
+          <Text style={styles.cardText}>Getting your location…</Text>
         ) : isWeb ? (
           <>
-            <View style={styles.webMapPlaceholder}>
-              <Text style={{ color: "#555" }}>
+            <View style={styles.mapPlaceholder}>
+              <Text style={styles.cardText}>
                 Map preview is available on mobile. On web, open the map in a new tab.
               </Text>
             </View>
@@ -63,18 +65,20 @@ export default function ImpactScreen() {
         ) : (
           <NativeMap coords={coords} />
         )}
+      </View>
 
+      {/* Upload Card */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Upload Donation Photo</Text>
         <Pressable onPress={() => {}} style={styles.primaryBtn}>
-          <Text style={styles.primaryText}>Upload donation photo</Text>
+          <Text style={styles.primaryText}>Upload</Text>
         </Pressable>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
-/**
- * Native-only map: web will NEVER import react-native-maps because we require it here.
- */
+/** Native-only map component */
 function NativeMap({ coords }: { coords: { latitude: number; longitude: number } }) {
   const MapView = useMemo(() => require("react-native-maps").default, []);
   const Marker = useMemo(() => require("react-native-maps").Marker, []);
@@ -96,28 +100,69 @@ function NativeMap({ coords }: { coords: { latitude: number; longitude: number }
 }
 
 const styles = StyleSheet.create({
-  mapContainer: {
-    height: 220,
-    borderRadius: 16,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#F0C3D2",
+  content: {
+    flexGrow: 1,
+    padding: 25,
+    paddingTop: 40,
+    paddingBottom: 80, // ensures content stops above tab bar
+    gap: 18,
+    backgroundColor: "#fff",
   },
-  map: { flex: 1 },
-  webMapPlaceholder: {
-    height: 220,
-    borderRadius: 16,
+  card: {
+    gap: 10,
+    padding: 16,
     borderWidth: 1,
-    borderColor: "#F0C3D2",
-    backgroundColor: "#FDECEF",
-    padding: 12,
-    justifyContent: "center",
+    borderColor: "#ea9ab2",
+    borderRadius: 10,
+    backgroundColor: "#fff",
+    shadowColor: "#ea9ab2",
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  cardTitle: {
+    fontFamily: "Onest-Bold",
+    fontSize: 24,
+    color: "#250921",
+  },
+  cardText: {
+    fontFamily: "Onest",
+    fontSize: 16,
+    color: "#250921",
+  },
+  warningText: {
+    fontFamily: "Onest",
+    fontSize: 16,
+    color: "#C62828",
   },
   primaryBtn: {
     backgroundColor: "#D81B60",
     borderRadius: 999,
     paddingVertical: 12,
     alignItems: "center",
+    marginTop: 10,
   },
-  primaryText: { color: "#FFF", fontWeight: "700" },
+  primaryText: {
+    color: "#fff",
+    fontWeight: "700",
+  },
+  mapContainer: {
+    height: 200,
+    borderRadius: 15,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#F0C3D2",
+  },
+  map: {
+    flex: 1,
+  },
+  mapPlaceholder: {
+    height: 200,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: "#F0C3D2",
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    padding: 12,
+  },
 });

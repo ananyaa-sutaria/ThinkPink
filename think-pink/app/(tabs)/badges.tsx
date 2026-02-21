@@ -108,7 +108,7 @@ export default function BadgesRewardsScreen() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: "#FDECEF" }}
+      style={{ flex: 1, backgroundColor: "#fff" }}
       contentContainerStyle={{ padding: 16, gap: 12 }}
     >
       {/* Header card */}
@@ -140,7 +140,7 @@ export default function BadgesRewardsScreen() {
           <Pressable
             onPress={() => setShowRedeem((s) => !s)}
             style={{
-              backgroundColor: "#FDECEF",
+              backgroundColor: "#fff",
               borderRadius: 999,
               paddingVertical: 10,
               paddingHorizontal: 14,

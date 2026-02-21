@@ -25,6 +25,7 @@ export default function AccountButton() {
           fontFamily: "Onest",
           fontWeight: "600",
           fontSize: 16,
+          
         }}
       >
         Hello, {"User"}!

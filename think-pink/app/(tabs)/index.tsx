@@ -58,11 +58,12 @@ const Home = () => {
 
 const styles = StyleSheet.create({
   content: {
-    gap: 18,
-    paddingHorizontal: 25,
+    flexGrow: 1,
+    padding: 25,
     paddingTop: 40,
-    paddingBottom: 20,
-    overflow: "visible", // iOS only
+    paddingBottom: 80, // ensures content stops above tab bar
+    gap: 18,
+    backgroundColor: "#fff",
   },
   phase: {
     gap: 10,
@@ -144,7 +145,6 @@ const styles = StyleSheet.create({
     padding: 8,
     backgroundColor: "#eaf2d7",
     borderRadius: 15,
-    marginBottom: 5,
   },
   medName: { fontFamily: "Onest-Bold", fontSize: 16, color: "#250921" },
   medTime: { fontFamily: "Onest", fontSize: 12, color: "#250921" },
