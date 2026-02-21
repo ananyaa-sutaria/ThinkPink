@@ -1,9 +1,13 @@
 // app/(tabs)/badges.tsx
 import { useEffect, useMemo, useState } from "react";
 import { View, Text, Pressable, Linking, ScrollView } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useRouter } from "expo-router";
+
 import { useProgress } from "../../lib/progressContext";
 import { awardBadge } from "../../lib/solanaClient";
-import { connectPhantom } from "../../lib/phantomWeb";
+
+const KEY_WALLET = "tp_wallet_address";
 
 function BadgePill({ label, color }: { label: string; color: string }) {
   return (
@@ -22,6 +26,8 @@ function BadgePill({ label, color }: { label: string; color: string }) {
 }
 
 export default function BadgesRewardsScreen() {
+  const router = useRouter();
+
   const {
     cycleBadgeUnlocked,
     cycleBadgeMinted,
@@ -37,8 +43,10 @@ export default function BadgesRewardsScreen() {
   const [showRedeem, setShowRedeem] = useState(false);
 
   useEffect(() => {
-    // Web demo: connect Phantom only when needed
-    // But we can show wallet if already connected
+    (async () => {
+      const w = (await AsyncStorage.getItem(KEY_WALLET)) || "";
+      setWallet(w);
+    })();
   }, []);
 
   const badgeStatus = useMemo(() => {
@@ -46,12 +54,6 @@ export default function BadgesRewardsScreen() {
     if (cycleBadgeUnlocked) return { label: "Unlocked", color: "#D81B60" };
     return { label: "Locked", color: "#8E8E8E" };
   }, [cycleBadgeUnlocked, cycleBadgeMinted]);
-
-  async function ensureWallet(): Promise<string> {
-    const pk = await connectPhantom();
-    setWallet(pk);
-    return pk;
-  }
 
   async function onMintBadge() {
     setErr("");
@@ -65,25 +67,24 @@ export default function BadgesRewardsScreen() {
       setErr("This badge is already minted for this device.");
       return;
     }
+    if (!wallet) {
+      setErr("Add your Solana wallet in Account first.");
+      return;
+    }
 
     setMinting(true);
     try {
-      const pk = wallet || (await ensureWallet());
-
-      const r = await awardBadge(pk);
+      const r = await awardBadge(wallet); // server mints, no Phantom needed
       setMintResult(r);
-
       await setCycleBadgeMintedLive(true);
     } catch (e: any) {
-      const msg = e?.message || "Mint failed";
-      setErr(msg);
+      setErr(e?.message || "Mint failed");
     } finally {
       setMinting(false);
     }
   }
 
   async function onQuickEarnDemo() {
-    // optional for demo: simulate earning points from other actions
     await addPoints(25);
   }
 
@@ -96,8 +97,6 @@ export default function BadgesRewardsScreen() {
       return;
     }
 
-    // Hackathon UX: redeem reduces points locally.
-    // If you later add burn tx, replace this body with redeemPointsWeb(cost).
     await addPoints(-cost);
     setMintResult({
       signature: "demo",
@@ -111,15 +110,11 @@ export default function BadgesRewardsScreen() {
       style={{ flex: 1, backgroundColor: "#FDECEF" }}
       contentContainerStyle={{ padding: 16, gap: 12 }}
     >
-      {/* Header card */}
       <View style={{ backgroundColor: "#FFF", padding: 16, borderRadius: 20, gap: 8 }}>
         <Text style={{ color: "#333", fontSize: 18 }}>Badges + Rewards</Text>
-        <Text style={{ color: "#555" }}>
-          Learn, earn points, mint verified badges.
-        </Text>
+        <Text style={{ color: "#555" }}>Learn, earn points, mint verified badges.</Text>
       </View>
 
-      {/* Points balance */}
       <View
         style={{
           backgroundColor: "#FFF",
@@ -132,11 +127,9 @@ export default function BadgesRewardsScreen() {
       >
         <Text style={{ color: "#333" }}>Your impact balance</Text>
         <Text style={{ color: "#D81B60", fontSize: 28 }}>{points} PNK points</Text>
-        <Text style={{ color: "#555" }}>
-          Earn points by passing quizzes and logging impact.
-        </Text>
+        <Text style={{ color: "#555" }}>Earn points by passing quizzes and logging impact.</Text>
 
-        <View style={{ flexDirection: "row", gap: 10 }}>
+        <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
           <Pressable
             onPress={() => setShowRedeem((s) => !s)}
             style={{
@@ -146,9 +139,7 @@ export default function BadgesRewardsScreen() {
               paddingHorizontal: 14,
             }}
           >
-            <Text style={{ color: "#333" }}>
-              {showRedeem ? "Hide rewards" : "Redeem rewards"}
-            </Text>
+            <Text style={{ color: "#333" }}>{showRedeem ? "Hide rewards" : "Redeem rewards"}</Text>
           </Pressable>
 
           <Pressable
@@ -165,7 +156,6 @@ export default function BadgesRewardsScreen() {
         </View>
       </View>
 
-      {/* Badge cards */}
       <View style={{ gap: 12 }}>
         <View style={{ backgroundColor: "#FFF", padding: 16, borderRadius: 20, gap: 10 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
@@ -176,6 +166,23 @@ export default function BadgesRewardsScreen() {
           <Text style={{ color: "#555" }}>
             Complete the quiz to unlock. Mint once to verify on Solana devnet.
           </Text>
+
+          {!wallet ? (
+            <Pressable
+              onPress={() => router.push("/account")}
+              style={{
+                backgroundColor: "#FDECEF",
+                borderRadius: 999,
+                paddingVertical: 12,
+                alignItems: "center",
+                marginTop: 4,
+              }}
+            >
+              <Text style={{ color: "#333" }}>Add wallet in Account</Text>
+            </Pressable>
+          ) : (
+            <Text style={{ color: "#777", fontSize: 12 }}>Wallet: {wallet}</Text>
+          )}
 
           {cycleBadgeUnlocked && !cycleBadgeMinted ? (
             <Pressable
@@ -189,9 +196,7 @@ export default function BadgesRewardsScreen() {
                 marginTop: 4,
               }}
             >
-              <Text style={{ color: "#FFF" }}>
-                {minting ? "Minting…" : "Mint unlocked badge"}
-              </Text>
+              <Text style={{ color: "#FFF" }}>{minting ? "Minting…" : "Mint unlocked badge"}</Text>
             </Pressable>
           ) : null}
 
@@ -210,20 +215,15 @@ export default function BadgesRewardsScreen() {
 
         <View style={{ backgroundColor: "#FFF", padding: 16, borderRadius: 20, gap: 8, opacity: 0.85 }}>
           <Text style={{ color: "#333", fontSize: 16 }}>Period Equity Supporter</Text>
-          <Text style={{ color: "#555" }}>
-            Log a donation to unlock.
-          </Text>
+          <Text style={{ color: "#555" }}>Log a donation to unlock.</Text>
           <BadgePill label="Locked" color="#8E8E8E" />
         </View>
       </View>
 
-      {/* Rewards */}
       {showRedeem ? (
         <View style={{ backgroundColor: "#FFF", padding: 16, borderRadius: 20, gap: 10 }}>
           <Text style={{ color: "#333", fontSize: 16 }}>Rewards</Text>
-          <Text style={{ color: "#555" }}>
-            Redeem points for impact perks (demo mode).
-          </Text>
+          <Text style={{ color: "#555" }}>Redeem points for impact perks (demo mode).</Text>
 
           <View style={{ gap: 10 }}>
             <Pressable
@@ -251,21 +251,17 @@ export default function BadgesRewardsScreen() {
         </View>
       ) : null}
 
-      {/* Errors */}
       {err ? (
         <View style={{ backgroundColor: "#FFF", padding: 12, borderRadius: 16 }}>
           <Text style={{ color: "#C62828" }}>{err}</Text>
         </View>
       ) : null}
 
-      {/* Mint result */}
       {mintResult ? (
         <View style={{ backgroundColor: "#FFF", padding: 16, borderRadius: 20, gap: 8 }}>
           <Text style={{ color: "#333" }}>Latest</Text>
 
-          {mintResult.note ? (
-            <Text style={{ color: "#333" }}>{mintResult.note}</Text>
-          ) : null}
+          {mintResult.note ? <Text style={{ color: "#333" }}>{mintResult.note}</Text> : null}
 
           {mintResult.signature && mintResult.signature !== "demo" ? (
             <>
@@ -280,14 +276,10 @@ export default function BadgesRewardsScreen() {
         </View>
       ) : null}
 
-      {/* Wallet hint */}
       <View style={{ paddingBottom: 24 }}>
         <Text style={{ color: "#777", fontSize: 12 }}>
-          Web demo: Phantom extension required for minting.
+          Minting uses your server wallet on devnet. No Phantom required.
         </Text>
-        {wallet ? (
-          <Text style={{ color: "#777", fontSize: 12 }}>Connected: {wallet}</Text>
-        ) : null}
       </View>
     </ScrollView>
   );
