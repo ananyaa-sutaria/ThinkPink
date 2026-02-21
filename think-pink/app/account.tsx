@@ -23,7 +23,7 @@ export default function AccountScreen() {
 
   const handleSave = async () => {
     try {
-      const response = await fetch("http://localhost:5000/api/users/sync", {
+      const response = await fetch("http://10.136.237.136:5000/api/users/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

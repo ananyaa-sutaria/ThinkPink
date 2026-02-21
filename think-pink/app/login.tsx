@@ -18,7 +18,7 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
-      const response = await fetch("http://localhost:5000/api/users/signin", {
+      const response = await fetch("http://10.136.237.136:5000/api/users/signin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
