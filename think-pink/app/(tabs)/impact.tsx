@@ -1,4 +1,5 @@
 import { View, Text, Pressable } from "react-native";
+import MapView from 'react-native-maps';
 
 export default function ImpactScreen() {
   return (
