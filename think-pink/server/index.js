@@ -8,7 +8,7 @@ import mongoose from "mongoose";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { Connection, PublicKey, Keypair, clusterApiUrl } from "@solana/web3.js";
 import { createMint, getOrCreateAssociatedTokenAccount, mintTo } from "@solana/spl-token";
-
+import CycleLog from "./models/CycleLog.js";
 import BadgeMint from "./models/BadgeMint.js";
 import { createPointsMintOnce, awardPointsToWallet } from "./solanaPoints.js";
 
@@ -16,6 +16,8 @@ dotenv.config();
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.get("/", (req, res) => res.send("OK"));
+app.get("/health", (req, res) => res.json({ ok: true }));
 
 // --------------------
 // Config & Constants
@@ -121,6 +123,54 @@ app.post("/solana/award-badge", async (req, res) => {
 // --------------------
 // AI Routes
 // --------------------
+app.post("/ai/cycle-chat", async (req, res) => {
+  try {
+    const { message, snapshot } = req.body || {};
+    if (!message) return res.status(400).json({ error: "message is required" });
+
+    const userId = snapshot?.userId || "guest";
+
+    // optional: pull recent logs if you have CycleLog model wired
+    let recentLogs = [];
+    try {
+      if (typeof CycleLog !== "undefined") {
+        recentLogs = await CycleLog.find({ userId }).sort({ dateISO: -1 }).limit(60).lean();
+      }
+    } catch {}
+
+    const mergedSnapshot = { ...(snapshot || {}), recentLogs };
+
+    const model = genAI.getGenerativeModel({ model: "gemini-3-pro-preview" });
+
+    const prompt = `
+You are "ThinkPink", a supportive cycle + nutrition assistant.
+Use ONLY the provided snapshot as your source of truth.
+If the answer isn't in the snapshot, say you don't have enough logged data yet and suggest what to track.
+Never diagnose. Keep answers short (2-5 sentences). If helpful, add 1 small bullet list.
+No bold formatting.
+
+Special rules:
+- If user asks about "day N", use mergedSnapshot.recentLogs filtered by cycleDay == N and summarize typical mood/energy/symptoms.
+- If fewer than 2 logs match, say not enough data yet.
+- If user asks "when was my last period", use mergedSnapshot.lastPeriodStartISO if present, otherwise say you don't know yet.
+- If user asks what to eat today, suggest general supportive foods based on todayPhase if present.
+
+SNAPSHOT:
+${JSON.stringify(mergedSnapshot, null, 2)}
+
+USER:
+${message}
+`;
+
+    const result = await model.generateContent(prompt);
+    const answer = result.response.text().trim();
+
+    res.json({ answer });
+  } catch (e) {
+    console.error("CYCLE CHAT ERROR:", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
 app.post("/ai/quiz", async (req, res) => {
   try {
     const { topic = "Cycle Phases", level = "beginner", numQuestions = 5 } = req.body;
@@ -149,10 +199,52 @@ app.post("/ai/daily-insight", async (req, res) => {
     res.status(500).json({ error: "AI Insight failed" });
   }
 });
+// ----- Cycle logs (Mongo) -----
 
+app.post("/logs/save", async (req, res) => {
+  try {
+    const log = req.body;
+
+    if (!log?.userId || !log?.dateISO) {
+      return res.status(400).json({ error: "userId and dateISO are required" });
+    }
+
+    const saved = await CycleLog.findOneAndUpdate(
+      { userId: log.userId, dateISO: log.dateISO },
+      { $set: log },
+      { new: true, upsert: true }
+    ).lean();
+
+    res.json({ ok: true, log: saved });
+  } catch (e) {
+    console.error("LOG SAVE ERROR:", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+app.get("/logs/recent", async (req, res) => {
+  try {
+    const userId = String(req.query.userId || "");
+    if (!userId) return res.status(400).json({ error: "userId is required" });
+
+    const limit = Math.min(Number(req.query.limit || 60), 120);
+
+    const logs = await CycleLog.find({ userId })
+      .sort({ dateISO: -1 })
+      .limit(limit)
+      .lean();
+
+    res.json({ ok: true, logs });
+  } catch (e) {
+    console.error("LOG RECENT ERROR:", e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
 // --------------------
 // Start
 // --------------------
 connectMongo().then(() => {
-  app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Server running on ${PORT}`));
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server running on http://0.0.0.0:${PORT}`);
+});
 });
