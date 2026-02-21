@@ -1,5 +1,11 @@
 import { View, Text, Pressable } from "react-native";
+import { useEffect, useState } from "react";
+import { getCycleBadgeUnlocked } from "../../lib/progressStore";
 
+const [unlocked, setUnlocked] = useState(false);
+useEffect(() => {
+  getCycleBadgeUnlocked().then(setUnlocked);
+}, []);
 export default function BadgesScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: "#FDECEF", padding: 16, gap: 12 }}>

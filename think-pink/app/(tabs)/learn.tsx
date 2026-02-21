@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { View, Text, Pressable, ScrollView } from "react-native";
 import { fetchQuiz, QuizChoice, QuizPayload } from "../../lib/quizClient";
-
+import { setCycleBadgeUnlocked } from "../../lib/progressStore";
 const PASS_SCORE = 4; // out of 5
 
 export default function LearnScreen() {
@@ -45,7 +45,7 @@ export default function LearnScreen() {
     setAnswers((prev) => ({ ...prev, [questionId]: choice }));
   }
 
-  function submit() {
+  async function submit() {
     if (!quiz) return;
 
     // ensure all answered
@@ -62,7 +62,11 @@ export default function LearnScreen() {
     for (const q of quiz.questions) {
       if (answers[q.id] === q.answer) s += 1;
     }
-    if (s >= PASS_SCORE) setUnlocked(true);
+    if (s >= PASS_SCORE) {
+        setUnlocked(true); 
+        await setCycleBadgeUnlocked(true);
+    }
+        
   }
 
   function reset() {
