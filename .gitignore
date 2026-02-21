@@ -1,6 +1,7 @@
+node_modules
+.env
 # Ignore the environment variables (CRITICAL for security)
 server/.env
-.env
 
 # Ignore the heavy library folders
 server/node_modules/
@@ -10,5 +11,3 @@ node_modules/
 dist/
 .expo/
 .env*.local
-.env
-server/.env
