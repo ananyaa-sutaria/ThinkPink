@@ -11,6 +11,9 @@ import { createMint, getOrCreateAssociatedTokenAccount, mintTo } from "@solana/s
 import CycleLog from "./models/CycleLog.js";
 import BadgeMint from "./models/BadgeMint.js";
 import { createPointsMintOnce, awardPointsToWallet } from "./solanaPoints.js";
+import DonationSubmission from "./models/donationSubmission.js";
+// const Location = require("./models/Location");
+import Location from "./models/Location.js";
 
 dotenv.config();
 const app = express();
@@ -97,6 +100,55 @@ app.post("/api/users/signin", async (req, res) => {
   }
 });
 
+// server/index.js
+app.post("/api/users/change-password", async (req, res) => {
+  try {
+    const { userId, newPassword } = req.body;
+
+    if (!userId || !newPassword) {
+      return res.status(400).json({ error: "userId and newPassword are required" });
+    }
+
+    const updated = await User.findOneAndUpdate(
+      { userId },
+      { $set: { password: newPassword } },
+      { new: true }
+    );
+
+    if (!updated) return res.status(404).json({ error: "User not found" });
+
+    res.json({ ok: true, message: "Password updated successfully" });
+  } catch (err) {
+    console.error("Change password error:", err);
+    res.status(500).json({ error: "Failed to update password" });
+  }
+});
+
+app.post("/api/users/sync", async (req, res) => {
+  try {
+    const { userId, name, wallet, password } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required" });
+    }
+
+    const updatedUser = await User.findOneAndUpdate(
+      { userId },
+      { $set: { name, wallet, password } },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json(updatedUser);
+  } catch (err) {
+    console.error("SYNC ERROR:", err);
+    res.status(500).json({ error: "Failed to sync user" });
+  }
+});
+
 // --------------------
 // Solana Routes
 // --------------------
@@ -123,6 +175,7 @@ app.post("/solana/award-badge", async (req, res) => {
 // --------------------
 // AI Routes
 // --------------------
+
 app.post("/ai/cycle-chat", async (req, res) => {
   try {
     const { message, snapshot } = req.body || {};
@@ -130,62 +183,191 @@ app.post("/ai/cycle-chat", async (req, res) => {
 
     const userId = snapshot?.userId || "guest";
 
-    // optional: pull recent logs if you have CycleLog model wired
-    let recentLogs = [];
-    try {
-      if (typeof CycleLog !== "undefined") {
-        recentLogs = await CycleLog.find({ userId }).sort({ dateISO: -1 }).limit(60).lean();
-      }
-    } catch {}
+    // Pull recent logs from Mongo
+    const recentLogs = await CycleLog.find({ userId })
+  .sort({ dateISO: -1 })
+  .limit(60)
+  .lean();
 
-    const mergedSnapshot = { ...(snapshot || {}), recentLogs };
+console.log("CYCLE-CHAT userId:", userId);
+console.log("CYCLE-CHAT recentLogs count:", recentLogs.length);
+console.log("CYCLE-CHAT most recent log:", recentLogs[0]);
+
+const lastStart = recentLogs.find(
+  (l) => l.periodStart === true || l.periodStart === "true"
+);const lastPeriodStartISO = lastStart?.dateISO;
+
+const enrichedSnapshot = {
+  ...(snapshot || {}),
+  recentLogs,
+  lastPeriodStartISO,
+};
+
+    // Hard-answer last period if asked (fast + reliable)
+    const lower = String(message).toLowerCase();
+    if (lower.includes("last period") || lower.includes("last cycle")) {
+      if (enrichedSnapshot.lastPeriodStartISO) {
+        return res.json({
+          answer: `Your most recent logged period start was ${enrichedSnapshot.lastPeriodStartISO}.`,
+        });
+      }
+      return res.json({
+        answer:
+          "I don’t have a logged period start date yet. Tap a day and mark it as Period Start so I can track this for you.",
+      });
+    }
 
     const model = genAI.getGenerativeModel({ model: "gemini-3-pro-preview" });
 
     const prompt = `
-You are "ThinkPink", a supportive cycle + nutrition assistant.
-Use ONLY the provided snapshot as your source of truth.
-If the answer isn't in the snapshot, say you don't have enough logged data yet and suggest what to track.
-Never diagnose. Keep answers short (2-5 sentences). If helpful, add 1 small bullet list.
-No bold formatting.
+You are ThinkPink, a supportive cycle + nutrition assistant.
+Use ONLY the snapshot data as truth. If it’s not in the snapshot, say you don’t have enough data yet.
+No diagnosis. Keep answers 2–5 sentences, no bold.
 
-Special rules:
-- If user asks about "day N", use mergedSnapshot.recentLogs filtered by cycleDay == N and summarize typical mood/energy/symptoms.
-- If fewer than 2 logs match, say not enough data yet.
-- If user asks "when was my last period", use mergedSnapshot.lastPeriodStartISO if present, otherwise say you don't know yet.
-- If user asks what to eat today, suggest general supportive foods based on todayPhase if present.
+Interpretation rules:
+- "day N of my cycle": use recentLogs where cycleDay == N. If <2 matches, say not enough data.
+- "how do I usually feel in luteal/follicular/ovulation/menstrual": filter recentLogs by phase and summarize typical mood/energy/symptoms.
+- "what should I eat today": use todayPhase if present; otherwise give a general balanced suggestion.
+- "when was my last period": use lastPeriodStartISO.
 
-SNAPSHOT:
-${JSON.stringify(mergedSnapshot, null, 2)}
+SNAPSHOT JSON:
+${JSON.stringify(enrichedSnapshot, null, 2)}
 
-USER:
+USER QUESTION:
 ${message}
 `;
 
     const result = await model.generateContent(prompt);
     const answer = result.response.text().trim();
-
+   
     res.json({ answer });
   } catch (e) {
     console.error("CYCLE CHAT ERROR:", e);
     res.status(500).json({ error: String(e?.message || e) });
   }
 });
+// server/index.js (replace your /ai/quiz route with this)
+
 app.post("/ai/quiz", async (req, res) => {
+  const { topic = "Cycle Phases 101", level = "beginner", numQuestions = 5 } = req.body || {};
+
+  // fallback quiz (always valid JSON)
+  const fallbackQuiz = {
+    topic,
+    level,
+    questions: [
+      {
+        id: "q1",
+        question: "Which phase is typically right before menstruation starts?",
+        choices: {
+          A: "Follicular",
+          B: "Ovulatory",
+          C: "Luteal",
+          D: "Menstrual",
+        },
+        answer: "C",
+        explanation: "The luteal phase occurs after ovulation and ends when menstruation begins.",
+      },
+      {
+        id: "q2",
+        question: "Ovulation usually happens around the middle of a typical cycle. What is released?",
+        choices: {
+          A: "A follicle",
+          B: "An egg",
+          C: "Progesterone",
+          D: "Menstrual blood",
+        },
+        answer: "B",
+        explanation: "Ovulation is when an ovary releases an egg.",
+      },
+      {
+        id: "q3",
+        question: "Which is a common, non-diagnostic sign that may happen in the luteal phase?",
+        choices: {
+          A: "Higher energy for everyone",
+          B: "Cravings or bloating for some people",
+          C: "Guaranteed weight loss",
+          D: "Always no symptoms",
+        },
+        answer: "B",
+        explanation: "Some people experience cravings, bloating, or mood changes in the luteal phase.",
+      },
+      {
+        id: "q4",
+        question: "A balanced snack for steady energy often includes:",
+        choices: {
+          A: "Only candy",
+          B: "Only water",
+          C: "Protein + fiber (like yogurt + berries)",
+          D: "Only soda",
+        },
+        answer: "C",
+        explanation: "Protein and fiber can help steady energy and keep you fuller longer.",
+      },
+      {
+        id: "q5",
+        question: "Which statement is most accurate?",
+        choices: {
+          A: "Everyone has the same cycle length",
+          B: "Cycles can vary and tracking helps you learn patterns",
+          C: "Symptoms always mean something is wrong",
+          D: "Cycle phases are not real",
+        },
+        answer: "B",
+        explanation: "Cycles vary person to person; tracking helps spot your own patterns.",
+      },
+    ].slice(0, Number(numQuestions) || 5),
+  };
+
   try {
-    const { topic = "Cycle Phases", level = "beginner", numQuestions = 5 } = req.body;
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    const prompt = `Return ONLY valid JSON with this schema: {"questions": [{"question": string, "choices": {"A": string, "B": string, "C": string, "D": string}, "answer": "A", "explanation": string}]}. Topic: ${topic}, Level: ${level}, Count: ${numQuestions}`;
-    
+    if (!process.env.GEMINI_API_KEY) {
+      return res.json({ ...fallbackQuiz, note: "Gemini key missing, using fallback quiz." });
+    }
+
+    const model = genAI.getGenerativeModel({ model: "gemini-3-pro-preview" });
+
+    const prompt = `
+You are an educational quiz writer for menstrual health literacy.
+Avoid medical diagnosis. Keep content factual, supportive, and appropriate for ${level} level.
+
+Topic: ${topic}
+Number of questions: ${numQuestions}
+
+Return ONLY valid JSON with this exact schema:
+{
+  "topic": string,
+  "level": string,
+  "questions": [
+    {
+      "id": string,
+      "question": string,
+      "choices": { "A": string, "B": string, "C": string, "D": string },
+      "answer": "A" | "B" | "C" | "D",
+      "explanation": string
+    }
+  ]
+}
+Rules:
+- Exactly ${numQuestions} questions
+- Explanations must be 1 sentence
+`;
+
     const result = await model.generateContent(prompt);
     const text = result.response.text();
+
     const match = text.match(/\{[\s\S]*\}/);
-    res.json(JSON.parse(match[0]));
+    if (!match) return res.json({ ...fallbackQuiz, note: "Model did not return JSON, using fallback quiz." });
+
+    const quiz = JSON.parse(match[0]);
+    if (!quiz?.questions?.length) return res.json({ ...fallbackQuiz, note: "Invalid model quiz, using fallback quiz." });
+
+    return res.json(quiz);
   } catch (err) {
-    res.status(500).json({ error: "AI Quiz failed" });
+    console.log("QUIZ ERROR:", err?.message || err);
+    // If Gemini key is blocked/leaked, you still get a working quiz
+    return res.json({ ...fallbackQuiz, note: "Gemini failed, using fallback quiz." });
   }
 });
-
 app.post("/ai/daily-insight", async (req, res) => {
   try {
     const { phase, symptoms, mood, energy } = req.body;
@@ -240,6 +422,107 @@ app.get("/logs/recent", async (req, res) => {
     res.status(500).json({ error: String(e?.message || e) });
   }
 });
+// Autocomplete donation places near user
+app.post("/impact/places-autocomplete", async (req, res) => {
+  try {
+    const { query, near } = req.body; // near: { lat, lng }
+    if (!query) return res.status(400).json({ error: "query required" });
+    if (!process.env.PLACES_API_KEY) return res.status(500).json({ error: "PLACES_API_KEY not set" });
+
+    const location = near?.lat && near?.lng ? `&location=${near.lat},${near.lng}&radius=50000` : "";
+    const url =
+      `https://maps.googleapis.com/maps/api/place/autocomplete/json` +
+      `?input=${encodeURIComponent(query)}` +
+      `&types=establishment${location}` +
+      `&key=${process.env.PLACES_API_KEY}`;
+
+    const r = await fetch(url);
+    const data = await r.json();
+
+    const suggestions = (data.predictions || []).slice(0, 6).map((p) => ({
+      placeId: p.place_id,
+      description: p.description,
+    }));
+
+    res.json({ ok: true, suggestions });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Resolve placeId -> full details (name/address/lat/lng)
+app.post("/impact/place-details", async (req, res) => {
+  try {
+    const { placeId } = req.body;
+    if (!placeId) return res.status(400).json({ error: "placeId required" });
+    if (!process.env.PLACES_API_KEY) return res.status(500).json({ error: "PLACES_API_KEY not set" });
+
+    const url =
+      `https://maps.googleapis.com/maps/api/place/details/json` +
+      `?place_id=${encodeURIComponent(placeId)}` +
+      `&fields=name,formatted_address,geometry` +
+      `&key=${process.env.PLACES_API_KEY}`;
+
+    const r = await fetch(url);
+    const data = await r.json();
+    const result = data.result;
+
+    if (!result) return res.status(404).json({ error: "Place not found" });
+
+    res.json({
+      ok: true,
+      place: {
+        placeId,
+        name: result.name,
+        address: result.formatted_address,
+        lat: result.geometry.location.lat,
+        lng: result.geometry.location.lng,
+      },
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Submit donation for approval (stores in MongoDB)
+app.post("/impact/submit-donation", async (req, res) => {
+  try {
+    const { userId, imageUrl, place } = req.body;
+    if (!userId) return res.status(400).json({ error: "userId required" });
+    if (!imageUrl) return res.status(400).json({ error: "imageUrl required" });
+    if (!place?.placeId) return res.status(400).json({ error: "place required" });
+
+    const doc = await DonationSubmission.create({
+      userId,
+      imageUrl,
+      placeId: place.placeId,
+      placeName: place.name,
+      address: place.address,
+      lat: place.lat,
+      lng: place.lng,
+      status: "pending",
+    });
+
+    res.json({ ok: true, submission: doc });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// -------------------------------
+// CONNECT LOCATIONS (Mongo)
+// -------------------------------
+// ✅ PLACE THIS AFTER connectMongo() AND BEFORE app.listen()
+app.get("/locations", async (req, res) => {
+  try {
+    const locations = await Location.find().lean(); // lean() ensures plain JSON
+    res.json(locations);
+  } catch (err) {
+    console.error("Failed to fetch locations:", err);
+    res.status(500).json({ error: "Failed to fetch locations" });
+  }
+});
+
 // --------------------
 // Start
 // --------------------
@@ -247,4 +530,17 @@ connectMongo().then(() => {
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on http://0.0.0.0:${PORT}`);
 });
+});
+
+
+// -------------------------------
+// Connecting locations from Mongo
+// -------------------------------
+app.get("/locations", async (req, res) => {
+  try {
+    const locations = await Location.find();
+    res.json(locations);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch locations" });
+  }
 });

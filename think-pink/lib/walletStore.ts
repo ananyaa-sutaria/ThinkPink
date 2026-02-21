@@ -1,6 +1,8 @@
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
+const KEY_WALLET = "tp_wallet_address";
 const KEY = "solana_wallet_address";
 
 async function webSet(key: string, value: string) {
@@ -10,12 +12,11 @@ async function webGet(key: string) {
   try { return localStorage.getItem(key); } catch { return null; }
 }
 
-export async function setWalletAddress(addr: string) {
-  if (Platform.OS === "web") return webSet(KEY, addr);
-  return SecureStore.setItemAsync(KEY, addr);
-}
 
 export async function getWalletAddress() {
-  if (Platform.OS === "web") return webGet(KEY);
-  return SecureStore.getItemAsync(KEY);
+  return await AsyncStorage.getItem(KEY_WALLET);
+}
+
+export async function setWalletAddress(addr: string) {
+  await AsyncStorage.setItem(KEY_WALLET, addr);
 }

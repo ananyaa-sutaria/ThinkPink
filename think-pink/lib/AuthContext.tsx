@@ -1,47 +1,75 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { API_BASE } from "../lib/api"; // make sure this points to your API config
 
-// 1. Updated to match your Backend (index.js)
+// -------------------------
+// Types
+// -------------------------
 interface User {
-  id: string; // Changed from 'id' to 'userId'
+  userId: string; // Must match your backend field
   name: string;
   wallet?: string;
 }
 
 interface AuthContextType {
   user: User | null;
-  isLoading: boolean; // Changed from 'loading' to 'isLoading' to match your _layout.tsx
-  signIn: (userData: User) => void;
+  isLoading: boolean;
+  signIn: (userData: User) => Promise<void>;
   signOut: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   isLoading: true,
-  signIn: () => {},
+  signIn: async () => {},
   signOut: () => {},
 });
 
+// -------------------------
+// Provider
+// -------------------------
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true); // Matches the new name
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // For the Hackathon: Simulate checking for an existing session
+    // Load stored user from AsyncStorage/localStorage if needed
     const timer = setTimeout(() => {
-      // Logic: If there's a stored user in local storage, load it here
       setIsLoading(false);
-    }, 1000);
-
+    }, 500);
     return () => clearTimeout(timer);
   }, []);
 
-  const signIn = (userData: User) => {
-    setUser(userData);
+  // -------------------------
+  // Sync user with backend
+  // -------------------------
+  const syncUser = async (userData: User) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/users/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: userData.userId,
+          name: userData.name,
+          wallet: userData.wallet || "",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Sync failed");
+      console.log("✅ User synced:", data);
+    } catch (err: any) {
+      console.warn("User sync failed:", err.message);
+    }
   };
 
-  const signOut = () => {
-    setUser(null);
+  // -------------------------
+  // Sign in
+  // -------------------------
+  const signIn = async (userData: User) => {
+    setUser(userData);
+    await syncUser(userData); // sync immediately after login
   };
+
+  const signOut = () => setUser(null);
 
   return (
     <AuthContext.Provider value={{ user, isLoading, signIn, signOut }}>
@@ -50,5 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Custom hook to use the auth state
+// -------------------------
+// Hook
+// -------------------------
 export const useAuth = () => useContext(AuthContext);

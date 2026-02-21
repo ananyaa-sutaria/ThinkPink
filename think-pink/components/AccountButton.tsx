@@ -1,10 +1,11 @@
 import { Pressable, Text } from "react-native";
 import { useRouter } from "expo-router";
+import { useAuth } from "../lib/AuthContext"; // adjust path if needed
 //import { useProgress } from "../lib/progressContext"; // import your user context
 
 export default function AccountButton() {
   const router = useRouter();
-  //const { userName } = useProgress(); // or however you store the username
+  const { user } = useAuth();
 
   return (
     <Pressable
@@ -27,7 +28,7 @@ export default function AccountButton() {
           fontSize: 16,
         }}
       >
-        Hello, {"User"}!
+        Hello, {user?.name || "Guest"}!
       </Text>
     </Pressable>
   );

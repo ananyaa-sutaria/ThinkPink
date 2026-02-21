@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
 import { cycleChat } from "../../lib/chatClient";import { buildUserSnapshot } from "../../lib/userSnaphot";
 
+
 type Msg = { id: string; role: "user" | "assistant"; text: string };
+
 
 export default function LogChatScreen() {
   const [messages, setMessages] = useState<Msg[]>([
@@ -17,27 +19,33 @@ export default function LogChatScreen() {
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
+
   useEffect(() => {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
   }, [messages.length]);
 
+
   const canSend = useMemo(() => input.trim().length > 0 && !sending, [input, sending]);
+
 
   async function onSend() {
     if (!canSend) return;
 
+
     const text = input.trim();
     setInput("");
+
 
     const userMsg: Msg = { id: `u_${Date.now()}`, role: "user", text };
     setMessages((prev) => [...prev, userMsg]);
     setSending(true);
 
-    try {
-      const snapshot = await buildUserSnapshot(); // local for now
-      const res = await cycleChat({ message: text, snapshot });
 
-      const botMsg: Msg = { id: `a_${Date.now()}`, role: "assistant", text: res.answer };
+    try {
+      const message = userMsg;
+      const snapshot = await buildUserSnapshot();
+      const r = await cycleChat({ message: userMsg.text, snapshot });
+      const botMsg: Msg = { id: `a_${Date.now()}`, role: "assistant", text:r.answer };
       setMessages((prev) => [...prev, botMsg]);
     } catch (e: any) {
       const botMsg: Msg = {
@@ -51,6 +59,7 @@ export default function LogChatScreen() {
     }
   }
 
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: "#FDECEF" }}
@@ -63,6 +72,7 @@ export default function LogChatScreen() {
             Personalized answers based on your cycle logs. No diagnosis — just insights.
           </Text>
         </View>
+
 
         <ScrollView
           ref={scrollRef}
@@ -85,6 +95,7 @@ export default function LogChatScreen() {
             </View>
           ))}
 
+
           {sending ? (
             <View
               style={{
@@ -99,6 +110,7 @@ export default function LogChatScreen() {
             </View>
           ) : null}
         </ScrollView>
+
 
         <View
           style={{
