@@ -2,7 +2,19 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-
+import { 
+  Connection, 
+  Keypair, 
+  PublicKey, 
+  clusterApiUrl 
+} from "@solana/web3.js";
+import { 
+  createMint, 
+  getOrCreateAssociatedTokenAccount, 
+  mintTo 
+} from "@solana/spl-token";
+import fs from "fs";
+import path from "path";
 dotenv.config();
 
 const app = express();
@@ -10,8 +22,24 @@ app.use(cors());
 app.use(express.json());
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const RPC = process.env.SOLANA_RPC || clusterApiUrl("devnet");
+const connection = new Connection(RPC, "confirmed");
+
+function loadServerKeypair() {
+  const kpPath = process.env.SOLANA_KEYPAIR_PATH || "./server-wallet.json";
+  const abs = path.resolve(process.cwd(), kpPath);
+  const secret = JSON.parse(fs.readFileSync(abs, "utf-8"));
+  return Keypair.fromSecretKey(Uint8Array.from(secret));
+}
+
+const serverWallet = loadServerKeypair();
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on ${PORT}`));
 
 app.get("/", (req, res) => res.send("OK"));
+
+
+
 app.post("/ai/quiz", async (req, res) => {
   try {
     const { topic = "Cycle Phases 101", level = "beginner", numQuestions = 5 } = req.body;
@@ -68,6 +96,44 @@ Rules:
     res.status(500).json({ error: String(err?.message || err) });
   }
 });
+app.post("/solana/create-badge-mint", async (req, res) => {
+  try {
+    const mint = await createMint(
+      connection,
+      serverWallet,
+      serverWallet.publicKey,
+      null,
+      0
+    );
+
+    res.json({
+      badgeMint: mint.toBase58(),
+      note: "Put this into server/.env as BADGE_MINT and restart the server",
+    });
+  } catch (err) {
+    console.error("CREATE MINT ERROR:", err);
+    res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+app.post("/solana/create-badge-mint", async (req, res) => {
+  try {
+    const mint = await createMint(
+      connection,
+      serverWallet,
+      serverWallet.publicKey,
+      null,
+      0
+    );
+
+    res.json({
+      badgeMint: mint.toBase58(),
+      note: "Put this into server/.env as BADGE_MINT and restart the server",
+    });
+  } catch (err) {
+    console.error("CREATE MINT ERROR:", err);
+    res.status(500).json({ error: String(err?.message || err) });
+  }
+});
 
 app.post("/ai/daily-insight", async (req, res) => {
   try {
@@ -115,5 +181,61 @@ selfCareTip (string, 1 sentence).
   }
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on ${PORT}`));
+
+app.post("/solana/create-badge-mint", async (req, res) => {
+  try {
+    const mint = await createMint(
+      connection,
+      serverWallet,            // payer
+      serverWallet.publicKey,  // mint authority
+      null,                    // freeze authority (optional)
+      0                        // decimals
+    );
+
+    res.json({
+      badgeMint: mint.toBase58(),
+      note: "Put this into server/.env as BADGE_MINT and restart the server",
+    });
+  } catch (err) {
+    console.error("CREATE MINT ERROR:", err);
+    res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+app.post("/solana/award-badge", async (req, res) => {
+  try {
+    const { walletAddress } = req.body;
+    if (!walletAddress) return res.status(400).json({ error: "walletAddress required" });
+
+    const mintAddress = process.env.BADGE_MINT;
+    if (!mintAddress) return res.status(500).json({ error: "BADGE_MINT not set in .env" });
+
+    const recipient = new PublicKey(walletAddress);
+    const mint = new PublicKey(mintAddress);
+
+    const ata = await getOrCreateAssociatedTokenAccount(
+      connection,
+      serverWallet, // payer
+      mint,
+      recipient
+    );
+
+    const sig = await mintTo(
+      connection,
+      serverWallet,
+      mint,
+      ata.address,
+      serverWallet.publicKey,
+      1
+    );
+
+    res.json({
+      signature: sig,
+      explorer: `https://explorer.solana.com/tx/${sig}?cluster=devnet`,
+      badgeMint: mint.toBase58(),
+      recipientAta: ata.address.toBase58(),
+    });
+  } catch (err) {
+    console.error("AWARD BADGE ERROR:", err);
+    res.status(500).json({ error: String(err?.message || err) });
+  }
+});
