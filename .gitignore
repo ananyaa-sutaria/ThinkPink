@@ -9,3 +9,6 @@ node_modules/
 # Ignore build files
 dist/
 .expo/
+.env*.local
+.env
+server/.env
