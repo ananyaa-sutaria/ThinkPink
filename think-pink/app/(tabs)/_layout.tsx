@@ -28,10 +28,11 @@ export default function TabsLayout() {
         },
       })}
     >
-      <Tabs.Screen name="index" options={{ title: "Home" }} />
-      <Tabs.Screen name="log" options={{ title: "Log" }} />
-      <Tabs.Screen name="learn" options={{ title: "Learn" }} />
+      
+      <Tabs.Screen name="learn" options={{ title: "Learn" }}/>
       <Tabs.Screen name="impact" options={{ title: "Impact" }} />
+      <Tabs.Screen name="index" options={{ title: "Home" }} />
+      <Tabs.Screen name="log" options={{ title: "Log" }} />      
       <Tabs.Screen name="badges" options={{ title: "Badges" }} />
     </Tabs>
   );

@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect  } from "react";
 import { View, Text, Modal, Pressable, TextInput, ScrollView } from "react-native";
 import { Calendar } from "react-native-calendars";
 import PhaseLegend from "../../components/PhaseLegend";
 import SymptomChips from "../../components/SymptomChips";
 import { phaseColors, phaseForDate, ymd } from "../../lib/phases";
 import { getLog, saveLog, symptomOptions } from "../../lib/mock";
+import { fetchDailyInsight } from "../../lib/geminiClient";
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -71,6 +72,248 @@ export default function LogScreen() {
 
     return base;
   }, [selected]);
+
+  function DayLogModal({
+  date,
+  open,
+  onClose,
+}: {
+  date: string;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const initial = useMemo(() => getLog(date), [date]);
+
+  const [periodStart, setPeriodStart] = useState(false);
+  const [periodEnd, setPeriodEnd] = useState(false);
+  const [spotting, setSpotting] = useState(false);
+  const [symptoms, setSymptoms] = useState<string[]>([]);
+  const [mood, setMood] = useState<number>(3);
+  const [energy, setEnergy] = useState<number>(3);
+  const [notes, setNotes] = useState<string>("");
+
+  const [aiInsight, setAiInsight] = useState<{
+    insight: string;
+    foodTip: string;
+    selfCareTip: string;
+  } | null>(null);
+  const [loadingAI, setLoadingAI] = useState(false);
+
+  // reset modal state whenever user taps a different day (or reopens)
+  useEffect(() => {
+    setPeriodStart(!!initial.periodStart);
+    setPeriodEnd(!!initial.periodEnd);
+    setSpotting(!!initial.spotting);
+    setSymptoms(initial.symptoms || []);
+    setMood(initial.mood ?? 3);
+    setEnergy(initial.energy ?? 3);
+    setNotes(initial.notes ?? "");
+    setAiInsight(null);
+    setLoadingAI(false);
+  }, [initial, open]);
+
+  const { phase, cycleDay } = phaseForDate(new Date(date + "T00:00:00"));
+  const colors = phaseColors[phase];
+
+  const toggleSymptom = (s: string) => {
+    setSymptoms((prev) =>
+      prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]
+    );
+  };
+
+  const save = async () => {
+    // 1) save locally first (fast + always works)
+    saveLog({
+      date,
+      periodStart,
+      periodEnd,
+      spotting,
+      symptoms,
+      mood,
+      energy,
+      notes,
+    });
+
+    // 2) generate Gemini insight
+    setLoadingAI(true);
+    try {
+      const data = await fetchDailyInsight({
+        date,
+        phase,
+        symptoms,
+        mood,
+        energy,
+        notes,
+        dietaryPrefs: "vegetarian", // later from profile
+      });
+      setAiInsight(data);
+    } catch (err) {
+      console.error("AI failed:", err);
+      setAiInsight({
+        insight: "Couldn’t generate insight right now.",
+        foodTip: "Try a warm, balanced meal with protein + complex carbs.",
+        selfCareTip: "Hydrate and do light stretching.",
+      });
+    } finally {
+      setLoadingAI(false);
+    }
+  };
+
+  return (
+    <Modal visible={open} animationType="slide" transparent onRequestClose={onClose}>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: "rgba(0,0,0,0.25)",
+          justifyContent: "flex-end",
+        }}
+      >
+        <View
+          style={{
+            backgroundColor: "#FFFFFF",
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+            padding: 16,
+            maxHeight: "85%",
+          }}
+        >
+          <View style={{ alignItems: "center", marginBottom: 10 }}>
+            <View
+              style={{
+                width: 52,
+                height: 5,
+                borderRadius: 999,
+                backgroundColor: "#EEE",
+              }}
+            />
+          </View>
+
+          <ScrollView contentContainerStyle={{ gap: 12, paddingBottom: 18 }}>
+            <View
+              style={{
+                padding: 12,
+                borderRadius: 16,
+                backgroundColor: colors.fill,
+                borderWidth: 1,
+                borderColor: colors.accent,
+              }}
+            >
+              <Text style={{ color: "#333", fontSize: 16, fontWeight: "700" }}>
+                {date} • {phase} • Day {cycleDay}
+              </Text>
+              <Text style={{ color: "#333", marginTop: 4 }}>
+                Tap options below to log your day.
+              </Text>
+            </View>
+
+            <Row>
+              <Toggle
+                label="Period started"
+                on={periodStart}
+                onPress={() => setPeriodStart(!periodStart)}
+              />
+              <Toggle
+                label="Period ended"
+                on={periodEnd}
+                onPress={() => setPeriodEnd(!periodEnd)}
+              />
+            </Row>
+
+            <Row>
+              <Toggle label="Spotting" on={spotting} onPress={() => setSpotting(!spotting)} />
+            </Row>
+
+            <View style={{ gap: 8 }}>
+              <Text style={{ color: "#333", fontWeight: "700" }}>Symptoms</Text>
+              <SymptomChips options={symptomOptions} selected={symptoms} onToggle={toggleSymptom} />
+            </View>
+
+            <View style={{ gap: 8 }}>
+              <Text style={{ color: "#333", fontWeight: "700" }}>Mood (1–5)</Text>
+              <Stepper value={mood} setValue={setMood} />
+            </View>
+
+            <View style={{ gap: 8 }}>
+              <Text style={{ color: "#333", fontWeight: "700" }}>Energy (1–5)</Text>
+              <Stepper value={energy} setValue={setEnergy} />
+            </View>
+
+            <View style={{ gap: 8 }}>
+              <Text style={{ color: "#333", fontWeight: "700" }}>Notes</Text>
+              <TextInput
+                value={notes}
+                onChangeText={setNotes}
+                placeholder="Anything you noticed today…"
+                placeholderTextColor="#999"
+                multiline
+                style={{
+                  minHeight: 90,
+                  borderWidth: 1,
+                  borderColor: "#F48FB1",
+                  borderRadius: 16,
+                  padding: 12,
+                  color: "#333",
+                  backgroundColor: "#FFF",
+                }}
+              />
+            </View>
+
+            {loadingAI && <Text style={{ color: "#333" }}>Generating insight…</Text>}
+
+            {aiInsight && (
+              <View
+                style={{
+                  backgroundColor: "#FDECEF",
+                  padding: 12,
+                  borderRadius: 16,
+                  borderWidth: 1,
+                  borderColor: "#F48FB1",
+                  gap: 6,
+                }}
+              >
+                <Text style={{ color: "#333", fontWeight: "700" }}>AI insight</Text>
+                <Text style={{ color: "#333" }}>{aiInsight.insight}</Text>
+                <Text style={{ color: "#333" }}>🍽 {aiInsight.foodTip}</Text>
+                <Text style={{ color: "#333" }}>💗 {aiInsight.selfCareTip}</Text>
+              </View>
+            )}
+
+            <Row>
+              <Pressable
+                onPress={onClose}
+                style={{
+                  flex: 1,
+                  paddingVertical: 12,
+                  borderRadius: 999,
+                  alignItems: "center",
+                  backgroundColor: "#FDECEF",
+                }}
+              >
+                <Text style={{ color: "#333", fontWeight: "700" }}>Done</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={save}
+                disabled={loadingAI}
+                style={{
+                  flex: 1,
+                  paddingVertical: 12,
+                  borderRadius: 999,
+                  alignItems: "center",
+                  backgroundColor: loadingAI ? "#F48FB1" : "#D81B60",
+                }}
+              >
+                <Text style={{ color: "#FFF", fontWeight: "700" }}>
+                  {loadingAI ? "Generating…" : "Save + AI"}
+                </Text>
+              </Pressable>
+            </Row>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
   return (
     <View style={{ flex: 1, backgroundColor: "#FDECEF", padding: 16, gap: 12 }}>
