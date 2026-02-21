@@ -2,14 +2,25 @@ import mongoose from "mongoose";
 
 const DonationSubmissionSchema = new mongoose.Schema(
   {
-    userId: { type: String, required: true, index: true },
-    imageUrl: { type: String, required: true }, // for hackathon: store local URI or later upload to cloud
-    placeId: { type: String, required: true },
-    placeName: { type: String, required: true },
-    address: { type: String, required: true },
-    lat: { type: Number, required: true },
-    lng: { type: Number, required: true },
+   userId: { type: String, required: true, index: true },
+    walletAddress: { type: String, default: "" },
+
+    locationName: { type: String, required: true },
+    locationLat: { type: Number, required: true },
+    locationLng: { type: Number, required: true },
+
+    photoUrl: { type: String, required: true }, // local path or hosted url
+    proofHash: { type: String, required: true }, // sha256
+
     status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
+
+    // on-chain fields after approval
+    impactMint: { type: String, default: "" },
+    txMint: { type: String, default: "" },
+    txFreeze: { type: String, default: "" },
+    pointsAwarded: { type: Boolean, default: false },
+pointsAwardedAt: { type: Date, default: null },
+pointsAwardedAmount: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

@@ -5,13 +5,13 @@ import { useAuth } from "../lib/AuthContext";
 export default function AccountButton() {
   const router = useRouter();
   const { user } = useAuth();
+  const displayName = user?.name?.trim() || "Guest";
 
-  // Decide where to go based on login state
   const handlePress = () => {
     if (user) {
-      router.push("/account"); // signed-in → account page
+      router.push("/account");
     } else {
-      router.push("/login");   // guest → login page
+      router.push("/login");
     }
   };
 
@@ -19,6 +19,7 @@ export default function AccountButton() {
     <Pressable
       onPress={handlePress}
       style={{
+        maxWidth: "52%",
         paddingHorizontal: 12,
         paddingVertical: 8,
         borderRadius: 999,
@@ -29,14 +30,19 @@ export default function AccountButton() {
       accessibilityLabel="Open account"
     >
       <Text
+        numberOfLines={1}
+        ellipsizeMode="tail"
+        adjustsFontSizeToFit
+        minimumFontScale={0.85}
         style={{
           color: "#fff",
           fontFamily: "Onest",
           fontWeight: "600",
           fontSize: 16,
+          flexShrink: 1,
         }}
       >
-        Hello, {user?.name || "Guest"}!
+        Hello, {displayName}!
       </Text>
     </Pressable>
   );

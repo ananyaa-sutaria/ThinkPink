@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import fs from "fs";
+import multer from "multer";
 import path from "path";
 import mongoose from "mongoose";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -12,36 +13,44 @@ import CycleLog from "./models/CycleLog.js";
 import BadgeMint from "./models/BadgeMint.js";
 import { createPointsMintOnce, awardPointsToWallet } from "./solanaPoints.js";
 import DonationSubmission from "./models/donationSubmission.js";
-// const Location = require("./models/Location");
-import Location from "./models/Location.js";
+import impactRoutes from "./impactRoutes.js";
+import { makeDaoRouter } from "./daoRoutes.js";
+import geoRoutes from "./geoRoutes.js";
+import User from "./models/user.js";
 
 dotenv.config();
+console.log("BADGE_MINT =", process.env.BADGE_MINT);
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.get("/", (req, res) => res.send("OK"));
-app.get("/health", (req, res) => res.json({ ok: true }));
+app.use(express.urlencoded({ extended: true }));
 
-// --------------------
-// Config & Constants
+app.use(impactRoutes);            // if impactRoutes defines full paths like "/impact/submit"
+app.use(geoRoutes);
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+
+app.get("/", (req, res) => res.send("OK"));
 // --------------------
 const PORT = process.env.PORT || 5000;
 const CLUSTER = process.env.SOLANA_CLUSTER || "devnet";
-const RPC_URL = process.env.SOLANA_RPC_URL || clusterApiUrl(CLUSTER);
-const connection = new Connection(RPC_URL, "confirmed");
+const serverWallet = loadServerKeypair();
+
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const RPC_URL = process.env.SOLANA_RPC_URL || clusterApiUrl(CLUSTER);
+app.get("/health", (req, res) => res.json({ ok: true }));
+const connection = new Connection(RPC_URL, "confirmed");
+
+app.use(makeDaoRouter({ connection }));
+// --------------------
+// Config & Constants
+
 
 // --------------------
 // Mongo Setup
 // --------------------
-const userSchema = new mongoose.Schema({
-  userId: { type: String, required: true, unique: true },
-  name: { type: String, required: true },
-  password: { type: String, required: true },
-  wallet: { type: String, default: "" },
-  createdAt: { type: Date, default: Date.now }
-});
-const User = mongoose.model("User", userSchema);
+
+const UPLOAD_DIR = path.join(process.cwd(), "uploads");
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 async function connectMongo() {
   const uri = process.env.MONGO_URI;
@@ -59,7 +68,7 @@ function loadServerKeypair() {
   const secret = JSON.parse(fs.readFileSync(abs, "utf-8"));
   return Keypair.fromSecretKey(Uint8Array.from(secret));
 }
-const serverWallet = loadServerKeypair();
+
 
 async function awardBadgeToWallet(walletAddress) {
   const mintStr = process.env.BADGE_MINT;
@@ -403,6 +412,101 @@ app.post("/logs/save", async (req, res) => {
     res.status(500).json({ error: String(e?.message || e) });
   }
 });
+// server/index.js (or wherever your routes live)
+
+app.get("/geo/search", async (req, res) => {
+  try {
+    const q = String(req.query.q || "").trim();
+    if (!q || q.length < 3) return res.json({ ok: true, results: [] });
+
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    const hasCoords = Number.isFinite(lat) && Number.isFinite(lng);
+
+    const toRad = (d) => (d * Math.PI) / 180;
+    const haversineKm = (lat1, lon1, lat2, lon2) => {
+      const R = 6371;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(a));
+    };
+
+    async function nominatimSearch({ bounded }) {
+      let url =
+        `https://nominatim.openstreetmap.org/search?` +
+        `q=${encodeURIComponent(q)}` +
+        `&format=json&addressdetails=1&limit=20&countrycodes=us`;
+
+      // For short queries, bounding often kills results — don’t bound unless query is longer
+      const allowBounded = bounded && hasCoords && q.length >= 5;
+
+      if (allowBounded) {
+        const delta = 0.35; // ~35–40km-ish
+        const left = lng - delta;
+        const right = lng + delta;
+        const top = lat + delta;
+        const bottom = lat - delta;
+        url += `&viewbox=${left},${top},${right},${bottom}&bounded=1`;
+      }
+
+      const r = await fetch(url, {
+        headers: {
+          "User-Agent": "ThinkPink/1.0",
+          Accept: "application/json",
+        },
+      });
+
+      if (!r.ok) {
+        const text = await r.text();
+        throw new Error(`Geo provider error: ${text.slice(0, 200)}`);
+      }
+
+      const data = await r.json();
+      return Array.isArray(data) ? data : [];
+    }
+
+    // Pass 1: try “near me” (bounded) when possible
+    let data = await nominatimSearch({ bounded: true });
+
+    // Pass 2: if nothing, fall back to unbounded search
+    if (!data.length) {
+      data = await nominatimSearch({ bounded: false });
+    }
+
+    let results = data
+      .map((item) => {
+        const ilat = Number(item.lat);
+        const ilng = Number(item.lon);
+        const distanceKm = hasCoords ? haversineKm(lat, lng, ilat, ilng) : null;
+
+        return {
+          name: item.display_name,
+          lat: ilat,
+          lng: ilng,
+          distanceKm,
+        };
+      })
+      .filter((x) => Number.isFinite(x.lat) && Number.isFinite(x.lng));
+
+    // Always sort nearest-first if we have coords
+    if (hasCoords) {
+      results.sort((a, b) => (a.distanceKm ?? 1e9) - (b.distanceKm ?? 1e9));
+
+      // Hard-cut to “reasonable-ish” nearby results first; if none, still return the closest
+      const nearby = results.filter((x) => (x.distanceKm ?? 1e9) <= 80);
+      results = (nearby.length ? nearby : results).slice(0, 8);
+    } else {
+      results = results.slice(0, 8);
+    }
+
+    res.json({ ok: true, results: results.map(({ name, lat, lng }) => ({ name, lat, lng })) });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "Geo search failed" });
+  }
+});
 
 app.get("/logs/recent", async (req, res) => {
   try {
@@ -423,6 +527,19 @@ app.get("/logs/recent", async (req, res) => {
   }
 });
 // Autocomplete donation places near user
+app.get("/points/:userId", async (req, res) => {
+  try {
+    const userId = String(req.params.userId || "").trim();
+    if (!userId) return res.status(400).json({ error: "userId required" });
+
+    const u = await User.findOne({ userId }).lean();
+    if (!u) return res.status(404).json({ error: "user not found" });
+
+    res.json({ ok: true, points: Number(u.points || 0) });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
 app.post("/impact/places-autocomplete", async (req, res) => {
   try {
     const { query, near } = req.body; // near: { lat, lng }
@@ -485,6 +602,39 @@ app.post("/impact/place-details", async (req, res) => {
 });
 
 // Submit donation for approval (stores in MongoDB)
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname || ".jpg");
+    cb(null, `donation_${Date.now()}${ext}`);
+  },
+});
+
+const upload = multer({ storage });
+
+// IMPORTANT: set this in .env to your ngrok URL so clients always get the right URL
+// PUBLIC_BASE_URL=https://xxxxx.ngrok-free.dev
+function getPublicBaseUrl(req) {
+  const envBase = process.env.PUBLIC_BASE_URL;
+  if (envBase) return envBase.replace(/\/$/, "");
+  // fallback (works locally, not always perfect behind tunnels)
+  const proto = req.headers["x-forwarded-proto"] || req.protocol;
+  const host = req.headers["x-forwarded-host"] || req.get("host");
+  return `${proto}://${host}`;
+}
+
+app.post("/impact/upload", upload.single("photo"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "photo is required" });
+
+    const base = getPublicBaseUrl(req);
+    const imageUrl = `${base}/uploads/${req.file.filename}`;
+
+    res.json({ ok: true, imageUrl });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "Upload failed" });
+  }
+});
 app.post("/impact/submit-donation", async (req, res) => {
   try {
     const { userId, imageUrl, place } = req.body;

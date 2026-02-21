@@ -1,4 +1,5 @@
 // lib/storage.ts
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 
 export async function getItem(key: string): Promise<string | null> {
@@ -9,8 +10,11 @@ export async function getItem(key: string): Promise<string | null> {
       return null;
     }
   }
-  // fallback for non-web demo (in-memory could be added later)
-  return null;
+  try {
+    return await AsyncStorage.getItem(key);
+  } catch {
+    return null;
+  }
 }
 
 export async function setItem(key: string, value: string): Promise<void> {
@@ -18,7 +22,11 @@ export async function setItem(key: string, value: string): Promise<void> {
     try {
       window.localStorage.setItem(key, value);
     } catch {}
+    return;
   }
+  try {
+    await AsyncStorage.setItem(key, value);
+  } catch {}
 }
 
 export async function removeItem(key: string): Promise<void> {
@@ -26,5 +34,9 @@ export async function removeItem(key: string): Promise<void> {
     try {
       window.localStorage.removeItem(key);
     } catch {}
+    return;
   }
+  try {
+    await AsyncStorage.removeItem(key);
+  } catch {}
 }

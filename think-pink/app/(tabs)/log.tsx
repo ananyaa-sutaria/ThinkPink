@@ -65,7 +65,7 @@ export default function LogChatScreen() {
       style={{ flex: 1, backgroundColor: "#FDECEF" }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <View style={{ padding: 16, gap: 10, flex: 1 }}>
+      <View style={{ padding: 16, gap: 10, flex: 1, paddingBottom: 110 }}>
         <View style={{ backgroundColor: "#FFF", borderRadius: 20, padding: 16, gap: 6 }}>
           <Text style={{ color: "#333", fontSize: 18, fontWeight: "800" }}>Ask ThinkPink</Text>
           <Text style={{ color: "#555" }}>
@@ -77,7 +77,7 @@ export default function LogChatScreen() {
         <ScrollView
           ref={scrollRef}
           style={{ flex: 1 }}
-          contentContainerStyle={{ gap: 10, paddingBottom: 10 }}
+          contentContainerStyle={{ gap: 10, paddingBottom: 20 }}
         >
           {messages.map((m) => (
             <View

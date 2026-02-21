@@ -1,264 +1,460 @@
+// app/(tabs)/impact.tsx
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
+import {
+  View,
+  Text,
+  Pressable,
+  StyleSheet,
+  Modal,
+  TextInput,
+  ScrollView,
+  Platform,
+} from "react-native";
 import { useProgress } from "../../lib/progressContext";
-import * as Location from "expo-location";
 import * as ImagePicker from "expo-image-picker";
-import { Image, TextInput, Modal, ScrollView } from "react-native";
+import * as Location from "expo-location";
 import { getOrCreateUserId } from "../../lib/userId";
-import { placesAutocomplete, placeDetails, submitDonation } from "../../lib/impactClient";
-import { useRouter } from "expo-router";
-import { API_BASE } from "@/lib/config";
-type Coords = { latitude: number; longitude: number };
+import { getWalletAddress } from "../../lib/walletStore";
+import { API_BASE } from "../../lib/api";
+import type { PlaceSuggestion, PlaceDetails } from "../../lib/impactClient";
+import { submitImpact } from "../../lib/impactClient";
+import { useAuth } from "../../lib/AuthContext";
 
 export default function ImpactScreen() {
-  const [centers, setCenters] = useState<any[]>([]);
-  const { points } = useProgress();
-  const [coords, setCoords] = useState<Coords | null>(null);
+  const { points, addPoints } = useProgress();
+  const { user } = useAuth();
+
+  const [deviceUserId, setDeviceUserId] = useState("");
+  const [wallet, setWallet] = useState("");
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [permDenied, setPermDenied] = useState(false);
+  const [centers, setCenters] = useState<any[]>([]);
 
-  const isWeb = Platform.OS === "web";
-  const [open, setOpen] = useState(false);
-  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [photo, setPhoto] = useState<{ uri: string; name: string; type: string } | null>(null);
 
+  const [pickOpen, setPickOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [selectedPlace, setSelectedPlace] = useState<any | null>(null);
-  const router = useRouter();
+  const [results, setResults] = useState<PlaceSuggestion[]>([]);
+  const [chosen, setChosen] = useState<PlaceDetails | null>(null);
+  const [loadingGeo, setLoadingGeo] = useState(false);
+  const [mySubmissions, setMySubmissions] = useState<any[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
-  async function pickImage() {
-  setStatusMsg("");
-  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!perm.granted) {
-    setStatusMsg("Photos permission denied.");
-    return;
-  }
-  const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ImagePicker.MediaTypeOptions.Images,
-    quality: 0.8,
-  });
-  if (result.canceled) return;
-  setImageUri(result.assets[0].uri);
-}
-
-async function searchPlaces(text: string) {
-  setQuery(text);
-  setSelectedPlace(null);
-
-  if (text.trim().length < 3) {
-    setSuggestions([]);
-    return;
-  }
-
-  try {
-    const near = coords ? { lat: coords.latitude, lng: coords.longitude } : undefined;
-    const r = await placesAutocomplete({ query: text.trim(), near });
-    setSuggestions(r.suggestions);
-  } catch (e: any) {
-    setSuggestions([]);
-    setStatusMsg(e?.message || "Search failed");
-  }
-}
-
-async function choosePlace(placeId: string) {
-  setStatusMsg("");
-  setSuggestions([]);
-  try {
-    const r = await placeDetails(placeId);
-    setSelectedPlace(r.place);
-    setQuery(`${r.place.name} — ${r.place.address}`);
-  } catch (e: any) {
-    setStatusMsg(e?.message || "Couldn’t load place");
-  }
-}
-
-async function onSubmitDonation() {
-  if (!imageUri) return setStatusMsg("Please pick a photo.");
-  if (!selectedPlace) return setStatusMsg("Please choose a location.");
-
-  setSubmitting(true);
-  setStatusMsg("");
-  try {
-    const userId = await getOrCreateUserId();
-    await submitDonation({ userId, imageUrl: imageUri, place: selectedPlace });
-    setStatusMsg("Submitted for approval ✅");
-    setImageUri(null);
-    setSelectedPlace(null);
-    setQuery("");
-  } catch (e: any) {
-    setStatusMsg(e?.message || "Submit failed");
-  } finally {
-    setSubmitting(false);
-  }
-}
-
+  const [donateOpen, setDonateOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        setPermDenied(true);
-        return;
-      }
-      const loc = await Location.getCurrentPositionAsync({});
-      setCoords({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+      const uid = await getOrCreateUserId();
+      setDeviceUserId(uid);
+
+      const w = await getWalletAddress();
+      setWallet(w || "");
+
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") {
+          setPermDenied(true);
+        } else {
+          setPermDenied(false);
+          const loc = await Location.getCurrentPositionAsync({});
+          setCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+        }
+      } catch {}
     })();
   }, []);
 
-  // const [centers, setCenters] = useState<any[]>([]);
-
-useEffect(() => {
-  fetch(`${API_BASE}/locations`)
-    .then(async (res) => {
-      const text = await res.text();
-      console.log("RAW SERVER RESPONSE:", text);
-
+  useEffect(() => {
+    (async () => {
       try {
-        const json = JSON.parse(text);
-        setCenters(json);
-      } catch {
-        console.log("NOT JSON — backend returned HTML or error page");
+        const res = await fetch(`${API_BASE}/locations`, {
+          headers: { "ngrok-skip-browser-warning": "true" },
+        });
+        const data = await res.json();
+        if (Array.isArray(data)) setCenters(data);
+      } catch {}
+    })();
+  }, []);
+
+  const submitUserId = (user as any)?.userId || (user as any)?.id || deviceUserId;
+
+  async function loadMySubmissions() {
+    const uid = submitUserId;
+    if (!uid) return;
+
+    try {
+      const res = await fetch(`${API_BASE}/impact/mine/${uid}`, {
+        headers: { "ngrok-skip-browser-warning": "true" },
+      });
+      const data = await res.json();
+      if (data.ok) setMySubmissions(data.submissions || []);
+    } catch {
+      console.log("Failed to load submissions");
+    }
+  }
+
+  useEffect(() => {
+    loadMySubmissions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [submitUserId]);
+
+  useEffect(() => {
+    if (!pickOpen) return;
+
+    const q = query.trim();
+    if (q.length < 2) {
+      setResults([]);
+      return;
+    }
+
+    const t = setTimeout(async () => {
+      setLoadingGeo(true);
+      try {
+        const suggestions = await fetchAutocomplete(q);
+        setResults(suggestions);
+      } catch (e: any) {
+        setResults([]);
+        setStatusMsg(e?.message || "Autocomplete failed");
+      } finally {
+        setLoadingGeo(false);
       }
-    })
-    .catch((err) => console.log("Fetch error:", err));
-}, []);
+    }, 300);
+
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, pickOpen, coords?.lat, coords?.lng]);
+
+  async function pickPhoto() {
+    setStatusMsg("");
+
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      setStatusMsg("Please allow photo library permissions.");
+      return;
+    }
+
+    const r = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+    });
+
+    if (r.canceled) return;
+
+    const uri = r.assets[0].uri;
+    const name = uri.split("/").pop() || `donation_${Date.now()}.jpg`;
+    setPhoto({ uri, name, type: "image/jpeg" });
+  }
+
+  async function fetchAutocomplete(q: string): Promise<PlaceSuggestion[]> {
+    const res = await fetch(`${API_BASE}/impact/places-autocomplete`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "ngrok-skip-browser-warning": "true",
+      },
+      body: JSON.stringify({
+        query: q,
+        near: coords ? { lat: coords.lat, lng: coords.lng } : undefined,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || "Autocomplete failed");
+    return (data?.suggestions || []) as PlaceSuggestion[];
+  }
+
+  async function fetchPlaceDetails(placeId: string): Promise<PlaceDetails> {
+    const res = await fetch(`${API_BASE}/impact/place-details`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "ngrok-skip-browser-warning": "true",
+      },
+      body: JSON.stringify({ placeId }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || "Place details failed");
+    return data.place as PlaceDetails;
+  }
+
+  async function submit() {
+    setStatusMsg("");
+
+    if (!photo) return setStatusMsg("Pick a photo first.");
+    if (!chosen) return setStatusMsg("Pick a donation location.");
+    if (!submitUserId) return setStatusMsg("Missing userId.");
+
+    setSubmitting(true);
+
+    try {
+      const form = new FormData();
+      form.append("userId", submitUserId);
+      form.append("walletAddress", wallet || "");
+      form.append("locationName", chosen.name);
+      form.append("locationLat", String(chosen.lat));
+      form.append("locationLng", String(chosen.lng));
+      form.append("photo", {
+        uri: photo.uri,
+        name: photo.name,
+        type: photo.type,
+      } as any);
+
+      await submitImpact(form);
+      await loadMySubmissions();
+
+      setStatusMsg("Submitted for approval ✅");
+      await addPoints(10);
+
+      setPhoto(null);
+      setChosen(null);
+      setQuery("");
+      setResults([]);
+      setPickOpen(false);
+    } catch (e: any) {
+      setStatusMsg(e?.message || "Submit failed");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
-    <><View style={{ flex: 1, backgroundColor: "#FDECEF", padding: 16, gap: 12 }}>
-          <View style={{ backgroundColor: "#FFF", borderRadius: 20, padding: 16 }}>
-              <Text style={{ fontSize: 18, fontWeight: "800", color: "#333" }}>Impact</Text>
-              <Text style={{ color: "#555", marginTop: 4 }}>Your points: {points}</Text>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: "#FDECEF" }}
+      contentContainerStyle={{ padding: 16, paddingTop: 24, gap: 12, paddingBottom: 110 }}
+    >
+      <View style={styles.card}>
+        <Text style={styles.hint}>Find menstrual product donation centers near you and log your donations here</Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.mapTitle}>Map</Text>
+
+        {permDenied ? (
+          <Text style={{ color: "#C62828" }}>
+            Location permission denied. You can still log donations without map preview.
+          </Text>
+        ) : !coords ? (
+          <Text style={styles.small}>Getting your location…</Text>
+        ) : Platform.OS === "web" ? (
+          <View style={styles.webMapPlaceholder}>
+            <Text style={{ color: "#555" }}>Map preview is available on mobile.</Text>
           </View>
+        ) : (
+          <NativeMap coords={coords} centers={centers} />
+        )}
+      </View>
 
-          <View style={{ backgroundColor: "#FFF", borderRadius: 20, padding: 16, gap: 10 }}>
-              <Text style={{ color: "#333", fontWeight: "800" }}>Map</Text>
+      <Pressable onPress={() => setDonateOpen(true)} style={styles.logDonationBtn}>
+        <Text style={styles.logDonationText}>Log a Donation</Text>
+      </Pressable>
 
-              {permDenied ? (
-                  <Text style={{ color: "#C62828" }}>
-                      Location permission denied. You can still use the app without the map.
-                  </Text>
-              ) : !coords ? (
-                  <Text style={{ color: "#555" }}>Getting your location…</Text>
-              ) : isWeb ? (
-                  <View style={styles.webMapPlaceholder}>
-                      <Text style={{ color: "#555" }}>
-                          Map preview is available on mobile only (Expo web doesn’t support react-native-maps).
-                      </Text>
-                  </View>
-              ) : (
-                  <NativeMap coords={coords} centers={centers} />
-              )}
+      <Modal visible={donateOpen} animationType="slide" onRequestClose={() => setDonateOpen(false)}>
+        <View style={{ flex: 1, backgroundColor: "#FDECEF", padding: 16 }}>
+          <ScrollView contentContainerStyle={{ gap: 12, paddingBottom: 30 }}>
+            <View style={styles.card}>
+              <Text style={styles.title}>Impact</Text>
+              <Text style={styles.sub}>Your points: {points}</Text>
+              <Text style={styles.hint}>
+                Submit a donation photo + location. We’ll verify and mint an on-chain Impact badge.
+              </Text>
+            </View>
 
-              <Pressable onPress={() => setOpen(true)} style={styles.primaryBtn}>
-                  <Text style={styles.primaryText}>Upload donation photo</Text>
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>1) Donation proof</Text>
+              <Pressable onPress={pickPhoto} style={styles.primaryBtn}>
+                <Text style={styles.primaryText}>{photo ? "Change photo" : "Upload donation photo"}</Text>
               </Pressable>
-          </View>
-      </View><Modal visible={open} animationType="slide" onRequestClose={() => setOpen(false)}>
-              <View
-  style={{
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  }}
->
-  {/* Back Button */}
-  <Pressable
-    onPress={() => setOpen(false)}
-    style={{
-      paddingVertical: 6,
-      paddingHorizontal: 10,
-    }}
-  >
-    <Text style={{ color: "#D81B60", fontWeight: "700", fontSize: 16 }}>
-      ← Back
-    </Text>
-  </Pressable>
+              {photo ? <Text style={styles.small}>Selected: {photo.name}</Text> : null}
+            </View>
 
-  <Text style={{ fontSize: 18, fontWeight: "800", color: "#333" }}>
-    Submit Donation
-  </Text>
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>2) Donation location</Text>
+              <Pressable
+                onPress={() => {
+                  setStatusMsg("");
+                  setPickOpen(true);
+                }}
+                style={styles.secondaryBtn}
+              >
+                <Text style={styles.secondaryText}>{chosen ? "Change location" : "Search + choose location"}</Text>
+              </Pressable>
 
-  {/* Spacer so title stays centered */}
-  <View style={{ width: 60 }} />
-</View>
+              {chosen ? (
+                <Text style={styles.small}>
+                  Chosen: {chosen.name} ({chosen.address})
+                </Text>
+              ) : null}
+            </View>
 
-                  <View style={{ backgroundColor: "#FFF", borderRadius: 20, padding: 16, gap: 10 }}>
-                      <Pressable onPress={pickImage} style={styles.primaryBtn}>
-                          <Text style={styles.primaryText}>{imageUri ? "Change photo" : "Pick a photo"}</Text>
-                      </Pressable>
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>3) Submit for approval</Text>
+              <Pressable onPress={submit} disabled={submitting} style={[styles.primaryBtn, submitting && { opacity: 0.7 }]}>
+                <Text style={styles.primaryText}>{submitting ? "Submitting…" : "Submit proof"}</Text>
+              </Pressable>
 
-                      {imageUri ? (
-                          <Image
-                              source={{ uri: imageUri }}
-                              style={{ width: "100%", height: 220, borderRadius: 16, backgroundColor: "#FDECEF" }}
-                              resizeMode="cover" />
-                      ) : null}
+              {statusMsg ? <Text style={{ color: "#333", marginTop: 8 }}>{statusMsg}</Text> : null}
 
-                      <Text style={{ color: "#333", fontWeight: "800", marginTop: 4 }}>Donation location</Text>
-                      <TextInput
-                          value={query}
-                          onChangeText={searchPlaces}
-                          placeholder="Search: 'UF pantry' or 'donation center'…"
-                          style={{
-                              backgroundColor: "#FDECEF",
-                              borderRadius: 14,
-                              paddingHorizontal: 12,
-                              paddingVertical: 10,
-                              borderWidth: 1,
-                              borderColor: "#F0C3D2",
-                          }} />
+              <Text style={styles.small}>
+                Privacy: We store your photo + location in Mongo for review. On-chain we only anchor a proof hash + mint
+                a badge.
+              </Text>
+            </View>
 
-                      {suggestions.length > 0 ? (
-                          <View style={{ borderWidth: 1, borderColor: "#F0C3D2", borderRadius: 14, overflow: "hidden" }}>
-                              {suggestions.map((s) => (
-                                  <Pressable
-                                      key={s.placeId}
-                                      onPress={() => choosePlace(s.placeId)}
-                                      style={{ padding: 12, backgroundColor: "#FFF", borderBottomWidth: 1, borderBottomColor: "#FDECEF" }}
-                                  >
-                                      <Text style={{ color: "#333" }}>{s.description}</Text>
-                                  </Pressable>
-                              ))}
-                          </View>
-                      ) : null}
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>My submissions</Text>
 
-                      <Pressable
-                          onPress={onSubmitDonation}
-                          disabled={submitting}
-                          style={[styles.primaryBtn, { opacity: submitting ? 0.7 : 1 }]}
-                      >
-                          <Text style={styles.primaryText}>{submitting ? "Submitting…" : "Submit for approval"}</Text>
-                      </Pressable>
+              <Pressable onPress={loadMySubmissions} style={styles.secondaryBtn}>
+                <Text style={styles.secondaryText}>Refresh</Text>
+              </Pressable>
 
-                      {statusMsg ? (
-                          <View style={{ backgroundColor: "#FFF", padding: 12, borderRadius: 16, borderWidth: 1, borderColor: "#F0C3D2" }}>
-                              <Text style={{ color: "#333" }}>{statusMsg}</Text>
-                          </View>
-                      ) : null}
-
-                      <Pressable onPress={() => setOpen(false)} style={{ paddingVertical: 10, alignItems: "center" }}>
-                          <Text style={{ color: "#D81B60", fontWeight: "700" }}>Close</Text>
-                      </Pressable>
-                      
+              {mySubmissions.length === 0 ? (
+                <Text style={styles.small}>No submissions yet.</Text>
+              ) : (
+                mySubmissions.map((s) => (
+                  <View key={s._id} style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#F3D0DB" }}>
+                    <Text style={{ color: "#333" }}>{s.locationName}</Text>
+                    <Text style={styles.small}>Status: {s.status}</Text>
+                    {s.txMint ? <Text style={styles.small}>Mint tx: {String(s.txMint).slice(0, 18)}...</Text> : null}
                   </View>
-           
-          </Modal></>
-    
-    
+                ))
+              )}
+            </View>
+
+            <Pressable onPress={() => setDonateOpen(false)} style={styles.backBtn}>
+              <Text style={{ color: "#D81B60" }}>Close</Text>
+            </Pressable>
+          </ScrollView>
+        </View>
+      </Modal>
+
+      <Modal visible={pickOpen} animationType="slide" onRequestClose={() => setPickOpen(false)}>
+        <View style={{ flex: 1, backgroundColor: "#FDECEF", padding: 16, gap: 12 }}>
+          <View style={styles.card}>
+            <Text style={styles.title}>Search location</Text>
+            <Text style={styles.small}>Type a place name, shelter, school, or city.</Text>
+
+            <TextInput
+              value={query}
+              onChangeText={(t) => {
+                setStatusMsg("");
+                setQuery(t);
+              }}
+              placeholder="e.g., Reitz Union"
+              style={styles.input}
+              autoCorrect={false}
+              autoCapitalize="none"
+            />
+
+            {loadingGeo ? <Text style={styles.small}>Searching…</Text> : null}
+
+            <Pressable
+              onPress={() => {
+                setPickOpen(false);
+                setQuery("");
+                setResults([]);
+              }}
+              style={styles.backBtn}
+            >
+              <Text style={{ color: "#D81B60" }}>Back</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Results</Text>
+
+            {query.trim().length < 2 ? (
+              <Text style={styles.small}>Type at least 2 characters.</Text>
+            ) : results.length === 0 && !loadingGeo ? (
+              <Text style={styles.small}>No matches yet.</Text>
+            ) : (
+              results.map((r, idx) => (
+                <Pressable
+                  key={r.placeId || String(idx)}
+                  onPress={async () => {
+                    try {
+                      setStatusMsg("");
+                      setLoadingGeo(true);
+                      const place = await fetchPlaceDetails(r.placeId);
+                      setChosen(place);
+                      setPickOpen(false);
+                    } catch (e: any) {
+                      setStatusMsg(e?.message || "Could not load place details");
+                    } finally {
+                      setLoadingGeo(false);
+                    }
+                  }}
+                  style={styles.resultRow}
+                >
+                  <Text style={{ color: "#333" }} numberOfLines={2}>
+                    {r.description}
+                  </Text>
+                </Pressable>
+              ))
+            )}
+          </View>
+
+          {statusMsg ? (
+            <View style={[styles.card, { padding: 12 }]}>
+              <Text style={{ color: "#C62828" }}>{statusMsg}</Text>
+            </View>
+          ) : null}
+        </View>
+      </Modal>
+    </ScrollView>
   );
 }
 
+const styles = StyleSheet.create({
+  card: {
+    backgroundColor: "#FFF",
+    borderRadius: 14,
+    padding: 16,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: "#ea9ab2",
+    shadowColor: "#ea9ab2",
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  title: { fontSize: 18, color: "#333", fontWeight: "800" },
+  sub: { color: "#555" },
+  hint: { color: "#555" },
+  mapTitle: { color: "#2D2230", fontSize: 32, fontFamily: "Onest-Bold" },
+  sectionTitle: { color: "#333", fontWeight: "800" },
+  primaryBtn: { backgroundColor: "#D81B60", borderRadius: 999, paddingVertical: 12, alignItems: "center" },
+  primaryText: { color: "#FFF", fontWeight: "700" },
+  logDonationBtn: { backgroundColor: "#BA5D84", borderRadius: 10, paddingVertical: 12, alignItems: "center" },
+  logDonationText: { color: "#FFF", fontFamily: "Onest-Bold", fontSize: 20 },
+  secondaryBtn: { backgroundColor: "#FDECEF", borderRadius: 999, paddingVertical: 12, alignItems: "center" },
+  secondaryText: { color: "#333", fontWeight: "700" },
+  small: { color: "#777", fontSize: 12 },
+  input: { borderWidth: 1, borderColor: "#F48FB1", borderRadius: 12, padding: 12, backgroundColor: "#FFF" },
+  resultRow: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#F3D0DB" },
+  backBtn: { alignSelf: "flex-start", marginTop: 6 },
+  mapContainer: {
+    height: 180,
+    borderRadius: 14,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#F3D0DB",
+    backgroundColor: "#EFE1EC",
+  },
+  map: { width: "100%", height: "100%" },
+  webMapPlaceholder: {
+    minHeight: 120,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#F3D0DB",
+    backgroundColor: "#EFE1EC",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 12,
+  },
+});
 
-/**
- * IMPORTANT:
- * - No top-level import from react-native-maps anywhere.
- * - Only require it at runtime AND only on native.
- */
-
-function NativeMap({ coords, centers }: { coords: Coords; centers: any[] }) {
+function NativeMap({ coords, centers }: { coords: { lat: number; lng: number }; centers: any[] }) {
   const MapStuff = useMemo(() => {
-    // require only runs on native because this component never renders on web
     const maps = require("react-native-maps");
     return {
       MapView: maps.default,
@@ -267,8 +463,8 @@ function NativeMap({ coords, centers }: { coords: Coords; centers: any[] }) {
   }, []);
 
   const region = {
-    latitude: coords.latitude,
-    longitude: coords.longitude,
+    latitude: coords.lat,
+    longitude: coords.lng,
     latitudeDelta: 0.05,
     longitudeDelta: 0.05,
   };
@@ -278,51 +474,21 @@ function NativeMap({ coords, centers }: { coords: Coords; centers: any[] }) {
 
   return (
     <View style={styles.mapContainer}>
-      {region && (
       <MapView style={styles.map} region={region} showsUserLocation>
-        {centers.map((center) => (
-        <Marker
-          key={center._id}
-          coordinate={{
-            latitude: center.coordinates.latitude,
-            longitude: center.coordinates.longitude,
-          }}
-          title={center.name}
-          description={center.description}
-        />
-      ))}
+        {centers.map((center, idx) => {
+          const lat = center?.coordinates?.latitude;
+          const lng = center?.coordinates?.longitude;
+          if (typeof lat !== "number" || typeof lng !== "number") return null;
+          return (
+            <Marker
+              key={center?._id || `center-${idx}`}
+              coordinate={{ latitude: lat, longitude: lng }}
+              title={center?.name || "Donation center"}
+              description={center?.description || ""}
+            />
+          );
+        })}
       </MapView>
-      )}
     </View>
   );
 }
-
-
-const styles = StyleSheet.create({
-  mapContainer: {
-    height: 220,
-    borderRadius: 16,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#F0C3D2",
-  },
-  map: { flex: 1 },
-  webMapPlaceholder: {
-    height: 220,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#F0C3D2",
-    backgroundColor: "#FDECEF",
-    padding: 12,
-    justifyContent: "center",
-  },
-  primaryBtn: {
-    backgroundColor: "#D81B60",
-    borderRadius: 999,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  primaryText: { color: "#FFF", fontWeight: "700" },
-});
-
-
