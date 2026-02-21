@@ -4,57 +4,49 @@ import cors from "cors";
 import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
-import CycleLog from "./models/CycleLog.js";
-
+import mongoose from "mongoose";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-
 import { Connection, PublicKey, Keypair, clusterApiUrl } from "@solana/web3.js";
-import {
-  createMint,
-  getOrCreateAssociatedTokenAccount,
-  mintTo,
-} from "@solana/spl-token";
+import { createMint, getOrCreateAssociatedTokenAccount, mintTo } from "@solana/spl-token";
 
 import BadgeMint from "./models/BadgeMint.js";
 import { createPointsMintOnce, awardPointsToWallet } from "./solanaPoints.js";
 
 dotenv.config();
-console.log("ENV has MONGO_URI?", !!process.env.MONGO_URI);
-import mongoose from "mongoose";
-
-
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 // --------------------
-// Config
+// Config & Constants
 // --------------------
 const PORT = process.env.PORT || 5000;
-
 const CLUSTER = process.env.SOLANA_CLUSTER || "devnet";
-const RPC_URL =
-  process.env.SOLANA_RPC_URL ||
-  process.env.SOLANA_RPC ||
-  clusterApiUrl(CLUSTER);
-
+const RPC_URL = process.env.SOLANA_RPC_URL || clusterApiUrl(CLUSTER);
 const connection = new Connection(RPC_URL, "confirmed");
-
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
 // --------------------
-// Mongo
+// Mongo Setup
 // --------------------
+const userSchema = new mongoose.Schema({
+  userId: { type: String, required: true, unique: true },
+  name: { type: String, required: true },
+  password: { type: String, required: true },
+  wallet: { type: String, default: "" },
+  createdAt: { type: Date, default: Date.now }
+});
+const User = mongoose.model("User", userSchema);
+
 async function connectMongo() {
-  const uri = process.env.MONGO_URI || process.env.MONGODB_URI;
-  if (!uri) {
-    console.warn("Mongo disabled: set MONGO_URI in server/.env");
-    return;
-  }
+  const uri = process.env.MONGO_URI;
+  if (!uri) return console.warn("MONGO_URI not set.");
   await mongoose.connect(uri);
-  console.log("Mongo connected");
+  console.log("✅ MongoDB Connected");
 }
+
 // --------------------
-// Server wallet
+// Solana Helpers
 // --------------------
 function loadServerKeypair() {
   const kpPath = process.env.SOLANA_KEYPAIR_PATH || "./server-wallet.json";
@@ -62,59 +54,50 @@ function loadServerKeypair() {
   const secret = JSON.parse(fs.readFileSync(abs, "utf-8"));
   return Keypair.fromSecretKey(Uint8Array.from(secret));
 }
-
 const serverWallet = loadServerKeypair();
 
-// --------------------
-// Helpers
-// --------------------
 async function awardBadgeToWallet(walletAddress) {
   const mintStr = process.env.BADGE_MINT;
-  if (!mintStr) throw new Error("BADGE_MINT not set in server/.env");
-
+  if (!mintStr) throw new Error("BADGE_MINT not set");
   const mint = new PublicKey(mintStr);
   const owner = new PublicKey(walletAddress);
-
-  const ata = await getOrCreateAssociatedTokenAccount(
-    connection,
-    serverWallet, // payer
-    mint,
-    owner
-  );
-
-  const signature = await mintTo(
-    connection,
-    serverWallet, // payer
-    mint,
-    ata.address,
-    serverWallet, // mint authority
-    1
-  );
-
-  return {
-    signature,
-    explorer: `https://explorer.solana.com/tx/${signature}?cluster=${CLUSTER}`,
-    badgeMint: mint.toBase58(),
-    recipientAta: ata.address.toBase58(),
-  };
+  const ata = await getOrCreateAssociatedTokenAccount(connection, serverWallet, mint, owner);
+  const signature = await mintTo(connection, serverWallet, mint, ata.address, serverWallet, 1);
+  return { signature, explorer: `https://explorer.solana.com/tx/${signature}?cluster=${CLUSTER}` };
 }
 
 // --------------------
-// Routes
+// Auth Routes
 // --------------------
-app.get("/", (req, res) => res.send("OK"));
-
-// Points mint (create once)
-app.post("/solana/create-points-mint", async (req, res) => {
+app.post("/api/users/signup", async (req, res) => {
   try {
-    const mint = await createPointsMintOnce();
-    res.json({ mint, note: "Save this as POINTS_MINT in server/.env" });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
+    const { username, password, wallet } = req.body;
+    const existing = await User.findOne({ name: username });
+    if (existing) return res.status(400).json({ error: "Username exists" });
+
+    const userId = `${username.toLowerCase().replace(/\s/g, "_")}_${Math.floor(100 + Math.random() * 900)}`;
+    const newUser = new User({ userId, name: username, password, wallet: wallet || "" });
+    await newUser.save();
+    res.json(newUser);
+  } catch (err) {
+    res.status(500).json({ error: "Signup failed" });
   }
 });
 
-// Award points (server mints points token to user)
+app.post("/api/users/signin", async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const user = await User.findOne({ name: username, password });
+    if (!user) return res.status(401).json({ error: "Invalid credentials" });
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ error: "Signin failed" });
+  }
+});
+
+// --------------------
+// Solana Routes
+// --------------------
 app.post("/solana/award-points", async (req, res) => {
   try {
     const { walletAddress, amount } = req.body;
@@ -125,263 +108,51 @@ app.post("/solana/award-points", async (req, res) => {
   }
 });
 
-// Create badge mint (run once, then put in BADGE_MINT)
-app.post("/solana/create-badge-mint", async (req, res) => {
-  try {
-    const mint = await createMint(
-      connection,
-      serverWallet,
-      serverWallet.publicKey,
-      null,
-      0
-    );
-
-    res.json({
-      badgeMint: mint.toBase58(),
-      note: "Put this into server/.env as BADGE_MINT and restart the server",
-    });
-  } catch (err) {
-    console.error("CREATE MINT ERROR:", err);
-    res.status(500).json({ error: String(err?.message || err) });
-  }
-});
-
-// Award badge (mint only once per wallet)
 app.post("/solana/award-badge", async (req, res) => {
   try {
     const { walletAddress } = req.body;
-    const badgeId = "cycle_literacy_lv1";
-
-    const existing = await BadgeMint.findOne({ walletAddress, badgeId });
-    if (existing) {
-      return res.status(409).json({
-        error: "Badge already minted for this wallet.",
-        existing,
-      });
-    }
-
     const result = await awardBadgeToWallet(walletAddress);
-
-    await BadgeMint.create({
-      walletAddress,
-      badgeId,
-      mintAddress: result.badgeMint,
-      signature: result.signature,
-    });
-
-    return res.json(result);
-  } catch (e) {
-    if (String(e?.code) === "11000") {
-      return res.status(409).json({ error: "Badge already minted for this wallet." });
-    }
-    return res.status(500).json({ error: e.message });
-  }
-});
-app.post("/logs/save", async (req, res) => {
-  try {
-    const log = req.body;
-    if (!log.userId || !log.dateISO) {
-      return res.status(400).json({ error: "userId and dateISO are required" });
-    }
-
-    // upsert = create if not exists, update if exists (same day)
-    const saved = await CycleLog.findOneAndUpdate(
-      { userId: log.userId, dateISO: log.dateISO },
-      { $set: log },
-      { new: true, upsert: true }
-    ).lean();
-
-    res.json({ ok: true, log: saved });
+    res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.get("/logs/recent", async (req, res) => {
-  try {
-    const userId = String(req.query.userId || "");
-    if (!userId) return res.status(400).json({ error: "userId is required" });
-
-    const limit = Math.min(Number(req.query.limit || 60), 120);
-
-    const logs = await CycleLog.find({ userId })
-      .sort({ dateISO: -1 })
-      .limit(limit)
-      .lean();
-
-    res.json({ ok: true, logs });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-// Gemini quiz
+// --------------------
+// AI Routes
+// --------------------
 app.post("/ai/quiz", async (req, res) => {
   try {
-    const { topic = "Cycle Phases 101", level = "beginner", numQuestions = 5 } =
-      req.body;
-
-    const model = genAI.getGenerativeModel({ model: "gemini-3-pro-preview" });
-
-    const prompt = `
-You are an educational quiz writer for menstrual health literacy.
-Avoid medical diagnosis. Keep content factual, supportive, and appropriate for ${level} level.
-
-Topic: ${topic}
-Number of questions: ${numQuestions}
-
-Return ONLY valid JSON with this exact schema:
-{
-  "topic": string,
-  "level": string,
-  "questions": [
-    {
-      "id": string,
-      "question": string,
-      "choices": { "A": string, "B": string, "C": string, "D": string },
-      "answer": "A" | "B" | "C" | "D",
-      "explanation": string
-    }
-  ]
-}
-
-Rules:
-- Exactly ${numQuestions} questions
-- Each question must have 4 choices A-D
-- Answers should be unambiguous
-- Explanations must be 1 sentence
-`;
-
+    const { topic = "Cycle Phases", level = "beginner", numQuestions = 5 } = req.body;
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const prompt = `Return ONLY valid JSON with this schema: {"questions": [{"question": string, "choices": {"A": string, "B": string, "C": string, "D": string}, "answer": "A", "explanation": string}]}. Topic: ${topic}, Level: ${level}, Count: ${numQuestions}`;
+    
     const result = await model.generateContent(prompt);
     const text = result.response.text();
-
     const match = text.match(/\{[\s\S]*\}/);
-    if (!match) {
-      return res.status(500).json({ error: "Quiz JSON not returned" });
-    }
-
-    const quiz = JSON.parse(match[0]);
-    if (!quiz?.questions?.length) {
-      return res.status(500).json({ error: "Invalid quiz format" });
-    }
-
-    res.json(quiz);
+    res.json(JSON.parse(match[0]));
   } catch (err) {
-    console.error("QUIZ ERROR:", err);
-    res.status(500).json({ error: String(err?.message || err) });
-  }
-});
-
-// Gemini daily insight
-app.post("/ai/cycle-chat", async (req, res) => {
-  try {
-    const { message, snapshot } = req.body;
-    const userId = snapshot?.userId || "guest";
-
-    const logs = await CycleLog.find({ userId })
-      .sort({ dateISO: -1 })
-      .limit(60)
-      .lean();
-
-    // 🔥 inject logs into snapshot so Gemini can use them
-    const enhancedSnapshot = {
-      ...snapshot,
-      recentLogs: logs,
-    };
-
-    const model = genAI.getGenerativeModel({ model: "gemini-3-pro-preview" });
-
-    const prompt = `
-You are "ThinkPink", a supportive cycle + nutrition assistant.
-Use ONLY the provided snapshot as your source of truth.
-If the answer isn't in the snapshot, say you don't have enough logged data yet and suggest what to track.
-Never diagnose. Keep answers short (2-5 sentences). If helpful, add 1 small bullet list.
-
-Special rule:
-- If the user asks about "day N", use snapshot.recentLogs filtered by cycleDay == N and summarize typical mood/energy/symptoms.
-- If fewer than 2 logs match, say not enough data yet.
-- If a user asks what to eat, base it on their current phase.
-
-SNAPSHOT:
-${JSON.stringify(enhancedSnapshot, null, 2)}
-
-USER QUESTION:
-${message}
-`;
-
-    const result = await model.generateContent(prompt);
-    const text = result.response.text().trim();
-
-    res.json({ answer: text });
-  } catch (e) {
-    console.error("CYCLE CHAT ERROR:", e);
-    res.status(500).json({ error: String(e?.message || e) });
+    res.status(500).json({ error: "AI Quiz failed" });
   }
 });
 
 app.post("/ai/daily-insight", async (req, res) => {
   try {
-    const {
-      date,
-      phase,
-      symptoms = [],
-      mood,
-      energy,
-      notes = "",
-      dietaryPrefs = "",
-    } = req.body;
-
-    const model = genAI.getGenerativeModel({ model: "gemini-3-pro-preview" });
-
-    const prompt = `
-You are a supportive cycle + nutrition assistant. Do not diagnose or provide medical instructions.
-Keep answers short and practical.
-
-User context:
-- Date: ${date}
-- Cycle phase: ${phase}
-- Symptoms: ${symptoms.length ? symptoms.join(", ") : "none"}
-- Mood (1-5): ${mood}
-- Energy (1-5): ${energy}
-- Notes: ${notes || "none"}
-- Dietary preferences: ${dietaryPrefs || "none"}
-
-Return ONLY valid JSON with exactly these keys:
-insight (string, 1-2 sentences),
-foodTip (string, 1 sentence),
-selfCareTip (string, 1 sentence).
-`;
-
+    const { phase, symptoms, mood, energy } = req.body;
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const prompt = `Provide supportive advice for Phase: ${phase}, Symptoms: ${symptoms}, Mood: ${mood}, Energy: ${energy}. Return JSON: {insight: string, foodTip: string, selfCareTip: string}.`;
+    
     const result = await model.generateContent(prompt);
-    const text = result.response.text();
-
-    const match = text.match(/\{[\s\S]*\}/);
-    if (!match) {
-      return res.json({
-        insight: text.trim().slice(0, 220),
-        foodTip: "Try a warm, balanced meal with protein + complex carbs.",
-        selfCareTip: "Hydrate and do light stretching.",
-      });
-    }
-
-    const data = JSON.parse(match[0]);
-    res.json(data);
+    const match = result.response.text().match(/\{[\s\S]*\}/);
+    res.json(JSON.parse(match[0]));
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Gemini request failed" });
+    res.status(500).json({ error: "AI Insight failed" });
   }
 });
 
 // --------------------
 // Start
 // --------------------
-connectMongo()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`Server running on ${PORT}`);
-    });
-  })
-  .catch((err) => {
-    console.error("Failed to start server:", err);
-  });
-
-
+connectMongo().then(() => {
+  app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Server running on ${PORT}`));
+});
