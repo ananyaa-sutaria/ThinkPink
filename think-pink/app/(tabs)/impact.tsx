@@ -6,7 +6,7 @@ import * as ImagePicker from "expo-image-picker";
 import { Image, TextInput, Modal, ScrollView } from "react-native";
 import { getOrCreateUserId } from "../../lib/userId";
 import { placesAutocomplete, placeDetails, submitDonation } from "../../lib/impactClient";
-
+import { useRouter } from "expo-router";
 type Coords = { latitude: number; longitude: number };
 
 export default function ImpactScreen() {
@@ -21,7 +21,7 @@ const [imageUri, setImageUri] = useState<string | null>(null);
 const [query, setQuery] = useState("");
 const [suggestions, setSuggestions] = useState<any[]>([]);
 const [selectedPlace, setSelectedPlace] = useState<any | null>(null);
-
+const router = useRouter();
 const [submitting, setSubmitting] = useState(false);
 const [statusMsg, setStatusMsg] = useState("");
 async function pickImage() {
@@ -134,13 +134,34 @@ async function onSubmitDonation() {
               </Pressable>
           </View>
       </View><Modal visible={open} animationType="slide" onRequestClose={() => setOpen(false)}>
-              <View style={{ flex: 1, backgroundColor: "#FDECEF", padding: 16, gap: 12 }}>
-                  <View style={{ backgroundColor: "#FFF", borderRadius: 20, padding: 16, gap: 8 }}>
-                      <Text style={{ fontSize: 18, fontWeight: "800", color: "#333" }}>Submit Donation</Text>
-                      <Text style={{ color: "#555" }}>
-                          Upload a photo and select the donation location. Submissions are marked pending.
-                      </Text>
-                  </View>
+              <View
+  style={{
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  }}
+>
+  {/* Back Button */}
+  <Pressable
+    onPress={() => setOpen(false)}
+    style={{
+      paddingVertical: 6,
+      paddingHorizontal: 10,
+    }}
+  >
+    <Text style={{ color: "#D81B60", fontWeight: "700", fontSize: 16 }}>
+      ← Back
+    </Text>
+  </Pressable>
+
+  <Text style={{ fontSize: 18, fontWeight: "800", color: "#333" }}>
+    Submit Donation
+  </Text>
+
+  {/* Spacer so title stays centered */}
+  <View style={{ width: 60 }} />
+</View>
 
                   <View style={{ backgroundColor: "#FFF", borderRadius: 20, padding: 16, gap: 10 }}>
                       <Pressable onPress={pickImage} style={styles.primaryBtn}>
@@ -199,8 +220,9 @@ async function onSubmitDonation() {
                       <Pressable onPress={() => setOpen(false)} style={{ paddingVertical: 10, alignItems: "center" }}>
                           <Text style={{ color: "#D81B60", fontWeight: "700" }}>Close</Text>
                       </Pressable>
+                      
                   </View>
-              </View>
+           
           </Modal></>
     
     
