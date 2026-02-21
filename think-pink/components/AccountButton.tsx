@@ -1,20 +1,28 @@
 import { Pressable, Text } from "react-native";
 import { useRouter } from "expo-router";
-import { useAuth } from "../lib/AuthContext"; // adjust path if needed
-//import { useProgress } from "../lib/progressContext"; // import your user context
+import { useAuth } from "../lib/AuthContext";
 
 export default function AccountButton() {
   const router = useRouter();
   const { user } = useAuth();
 
+  // Decide where to go based on login state
+  const handlePress = () => {
+    if (user) {
+      router.push("/account"); // signed-in → account page
+    } else {
+      router.push("/login");   // guest → login page
+    }
+  };
+
   return (
     <Pressable
-      onPress={() => router.push("/account")}
+      onPress={handlePress}
       style={{
         paddingHorizontal: 12,
         paddingVertical: 8,
         borderRadius: 999,
-        backgroundColor: "#C7547F", // match header background
+        backgroundColor: "#C7547F",
         elevation: 5,
       }}
       accessibilityRole="button"
