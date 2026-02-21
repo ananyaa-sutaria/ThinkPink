@@ -37,11 +37,11 @@ export default function AccountScreen() {
     }
   };
 
-  // --- ADDED SIGN OUT LOGIC ---
   const handleSignOut = () => {
     try {
-      signOut(); // Clears the user from AuthContext
-      router.replace("/login"); // Moves you back to the login screen
+      signOut();
+      // FIX: Added 'as any' to bypass strict routing check
+      router.replace("/login" as any); 
     } catch (error) {
       console.error("Sign out error:", error);
     }
@@ -86,7 +86,6 @@ export default function AccountScreen() {
         <Text style={styles.buttonText}>Save Changes</Text>
       </Pressable>
 
-      {/* --- IMPROVED SIGN OUT BUTTON --- */}
       <Pressable 
         onPress={handleSignOut} 
         style={({ pressed }) => [
@@ -121,15 +120,6 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   buttonText: { color: "#FFF", fontWeight: "bold", fontSize: 18 },
-  signOutButton: { 
-    marginTop: 30, 
-    padding: 15, 
-    borderRadius: 15, 
-    alignItems: "center" 
-  },
-  signOutText: { 
-    color: "#D81B60", 
-    fontWeight: "bold", 
-    fontSize: 16 
-  },
+  signOutButton: { marginTop: 30, padding: 15, borderRadius: 15, alignItems: "center" },
+  signOutText: { color: "#D81B60", fontWeight: "bold", fontSize: 16 },
 });

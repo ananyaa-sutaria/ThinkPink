@@ -1,119 +1,86 @@
 import { useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, Alert } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
-import { useAuth } from "../lib/AuthContext"; // Import useAuth to log them in
+import { useAuth } from "../lib/AuthContext";
 
-export default function AuthScreen() {
+export default function LoginScreen() {
   const router = useRouter();
-  const { signIn } = useAuth(); // Get the signIn function from context
-  
+  const { signIn } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSignup = async () => {
-    // 1. Validation
+  const handleSignIn = async () => {
     if (!username || !password) {
       alert("Please enter both username and password");
       return;
     }
 
-    console.log("Attempting to create account for:", username);
-
+    setLoading(true);
     try {
-      // 2. Connect to your backend
-      const response = await fetch("http://localhost:5000/api/users/signup", {
+      const response = await fetch("http://localhost:5000/api/users/signin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: username,
-          password: password,
+        body: JSON.stringify({ 
+          username: username.trim(), 
+          password: password.trim() 
         }),
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        alert("Account Created Successfully! 🎉");
-        
-        // 3. Automatically sign them in with the data from MongoDB
-        // Ensure your AuthContext signIn handles the user object
-        await signIn(data);
-        
-        // 4. Move to the main app
-        router.replace("/(tabs)"); 
-      } else {
-        alert(data.error || "Signup failed");
-      }
+    console.log("✅ Sign in successful");
+    await signIn(data as any); 
+    
+    // FORCE REDIRECT: Use the group name explicitly
+    router.replace("/(tabs)"); 
+  }
     } catch (error) {
-      console.error("Signup Error:", error);
-      alert("Cannot connect to server. Is your backend terminal running on port 5000?");
+      alert("Cannot connect to server. Check your backend terminal!");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Create Account</Text>
+      <Text style={styles.title}>ThinkPink</Text>
+      <Text style={styles.subtitle}>Welcome back!</Text>
 
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>Username</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Enter username"
-          value={username}
-          onChangeText={setUsername}
-          autoCapitalize="none"
-        />
-      </View>
+      <TextInput
+        style={styles.input}
+        placeholder="Username"
+        value={username}
+        onChangeText={setUsername}
+        autoCapitalize="none"
+      />
+      <TextInput
+        style={styles.input}
+        placeholder="Password"
+        secureTextEntry
+        value={password}
+        onChangeText={setPassword}
+      />
 
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>Password</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="••••••••"
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-        />
-      </View>
-
-      <Pressable 
-        onPress={handleSignup} 
-        style={({ pressed }) => [
-          styles.button, 
-          { opacity: pressed ? 0.8 : 1 }
-        ]}
-      >
-        <Text style={styles.buttonText}>Sign Up</Text>
+      <Pressable onPress={handleSignIn} style={styles.button} disabled={loading}>
+        {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Sign In</Text>}
       </Pressable>
-      
-      <Pressable onPress={() => router.push("/login")} style={{ marginTop: 20 }}>
-        <Text style={{ color: "#D81B60", textAlign: "center" }}>
-          Already have an account? Sign In
-        </Text>
+
+      <Pressable onPress={() => router.push("/signup")} style={styles.linkButton}>
+        <Text style={styles.linkText}>New here? Create an account</Text>
       </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', padding: 20, backgroundColor: "#FDECEF" },
-  title: { fontSize: 28, fontWeight: "900", color: "#D81B60", marginBottom: 30, textAlign: 'center' },
-  inputContainer: { marginBottom: 15 },
-  label: { fontWeight: "bold", marginBottom: 5, color: "#333" },
-  input: {
-    backgroundColor: "#FFF",
-    borderWidth: 1,
-    borderColor: "#F48FB1",
-    borderRadius: 10,
-    padding: 12,
-    color: "#000"
-  },
-  button: {
-    backgroundColor: "#D81B60",
-    padding: 18,
-    borderRadius: 99,
-    alignItems: "center",
-    marginTop: 20
-  },
-  buttonText: { color: "#FFF", fontWeight: "bold", fontSize: 18 }
+  container: { flex: 1, justifyContent: 'center', padding: 30, backgroundColor: "#FDECEF" },
+  title: { fontSize: 42, fontWeight: "900", color: "#D81B60", textAlign: 'center' },
+  subtitle: { fontSize: 18, color: "#F48FB1", textAlign: 'center', marginBottom: 40 },
+  input: { backgroundColor: "#FFF", borderWidth: 1, borderColor: "#F48FB1", borderRadius: 15, padding: 15, marginBottom: 15 },
+  button: { backgroundColor: "#D81B60", padding: 20, borderRadius: 99, alignItems: "center" },
+  buttonText: { color: "#FFF", fontWeight: "bold", fontSize: 18 },
+  linkButton: { marginTop: 20 },
+  linkText: { color: "#D81B60", textAlign: "center" }
 });
