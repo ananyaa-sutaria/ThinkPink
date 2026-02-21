@@ -1,10 +1,13 @@
 import { useMemo, useState } from "react";
 import { View, Text, Pressable, ScrollView } from "react-native";
 import { fetchQuiz, QuizChoice, QuizPayload } from "../../lib/quizClient";
-import { setCycleBadgeUnlocked } from "../../lib/progressStore";
+import { useProgress } from "../../lib/progressContext";
+
 const PASS_SCORE = 4; // out of 5
 
 export default function LearnScreen() {
+  const { setCycleBadgeUnlockedLive } = useProgress();
+
   const [loading, setLoading] = useState(false);
   const [quiz, setQuiz] = useState<QuizPayload | null>(null);
   const [answers, setAnswers] = useState<Record<string, QuizChoice | null>>({});
@@ -23,12 +26,15 @@ export default function LearnScreen() {
   async function startQuiz() {
     setLoading(true);
     setSubmitted(false);
+    setUnlocked(false);
+
     try {
       const q = await fetchQuiz({
         topic: "Cycle Phases + Symptoms + Nutrition Basics",
         level: "beginner",
         numQuestions: 5,
       });
+
       setQuiz(q);
 
       // init answer map
@@ -50,33 +56,35 @@ export default function LearnScreen() {
 
     // ensure all answered
     const anyBlank = quiz.questions.some((q) => !answers[q.id]);
-    if (anyBlank) {
-      // lightweight guard; you can show a nicer UI later
-      return;
+    if (anyBlank) return;
+
+    // compute score
+    let s = 0;
+    for (const q of quiz.questions) {
+      if (answers[q.id] === q.answer) s += 1;
     }
 
     setSubmitted(true);
 
     // unlock badge if pass
-    let s = 0;
-    for (const q of quiz.questions) {
-      if (answers[q.id] === q.answer) s += 1;
-    }
     if (s >= PASS_SCORE) {
-        setUnlocked(true); 
-        await setCycleBadgeUnlocked(true);
+      setUnlocked(true);
+      await setCycleBadgeUnlockedLive(true);
     }
-        
   }
 
   function reset() {
     setQuiz(null);
     setSubmitted(false);
+    setUnlocked(false);
     setAnswers({});
   }
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: "#FDECEF" }} contentContainerStyle={{ padding: 16, gap: 12 }}>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: "#FDECEF" }}
+      contentContainerStyle={{ padding: 16, gap: 12 }}
+    >
       <View style={{ backgroundColor: "#FFF", borderRadius: 20, padding: 16, gap: 6 }}>
         <Text style={{ color: "#333", fontSize: 18, fontWeight: "800" }}>
           Cycle Literacy
@@ -109,7 +117,15 @@ export default function LearnScreen() {
           </Pressable>
 
           {unlocked && (
-            <View style={{ backgroundColor: "#FDECEF", borderRadius: 16, padding: 12, borderWidth: 1, borderColor: "#F48FB1" }}>
+            <View
+              style={{
+                backgroundColor: "#FDECEF",
+                borderRadius: 16,
+                padding: 12,
+                borderWidth: 1,
+                borderColor: "#F48FB1",
+              }}
+            >
               <Text style={{ color: "#333", fontWeight: "800" }}>Badge unlocked</Text>
               <Text style={{ color: "#333" }}>
                 Go to Badges to mint Cycle Literacy Level 1.
@@ -166,13 +182,27 @@ export default function LearnScreen() {
             {!submitted ? (
               <Pressable
                 onPress={submit}
-                style={{ marginTop: 14, backgroundColor: "#D81B60", borderRadius: 999, paddingVertical: 12, alignItems: "center" }}
+                style={{
+                  marginTop: 14,
+                  backgroundColor: "#D81B60",
+                  borderRadius: 999,
+                  paddingVertical: 12,
+                  alignItems: "center",
+                }}
               >
                 <Text style={{ color: "#FFF", fontWeight: "700" }}>Submit</Text>
               </Pressable>
             ) : (
               <View style={{ marginTop: 14, gap: 10 }}>
-                <View style={{ backgroundColor: "#FDECEF", borderRadius: 16, padding: 12, borderWidth: 1, borderColor: "#F48FB1" }}>
+                <View
+                  style={{
+                    backgroundColor: "#FDECEF",
+                    borderRadius: 16,
+                    padding: 12,
+                    borderWidth: 1,
+                    borderColor: "#F48FB1",
+                  }}
+                >
                   <Text style={{ color: "#333", fontWeight: "800" }}>
                     Score: {score}/5
                   </Text>
@@ -185,7 +215,12 @@ export default function LearnScreen() {
 
                 <Pressable
                   onPress={reset}
-                  style={{ backgroundColor: "#FDECEF", borderRadius: 999, paddingVertical: 12, alignItems: "center" }}
+                  style={{
+                    backgroundColor: "#FDECEF",
+                    borderRadius: 999,
+                    paddingVertical: 12,
+                    alignItems: "center",
+                  }}
                 >
                   <Text style={{ color: "#333", fontWeight: "700" }}>Back</Text>
                 </Pressable>
