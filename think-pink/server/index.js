@@ -11,6 +11,7 @@ import { createMint, getOrCreateAssociatedTokenAccount, mintTo } from "@solana/s
 import CycleLog from "./models/CycleLog.js";
 import BadgeMint from "./models/BadgeMint.js";
 import { createPointsMintOnce, awardPointsToWallet } from "./solanaPoints.js";
+import DonationSubmission from "./models/donationSubmission.js";
 
 dotenv.config();
 const app = express();
@@ -123,6 +124,7 @@ app.post("/solana/award-badge", async (req, res) => {
 // --------------------
 // AI Routes
 // --------------------
+
 app.post("/ai/cycle-chat", async (req, res) => {
   try {
     const { message, snapshot } = req.body || {};
@@ -130,41 +132,63 @@ app.post("/ai/cycle-chat", async (req, res) => {
 
     const userId = snapshot?.userId || "guest";
 
-    // optional: pull recent logs if you have CycleLog model wired
-    let recentLogs = [];
-    try {
-      if (typeof CycleLog !== "undefined") {
-        recentLogs = await CycleLog.find({ userId }).sort({ dateISO: -1 }).limit(60).lean();
-      }
-    } catch {}
+    // Pull recent logs from Mongo
+    const recentLogs = await CycleLog.find({ userId })
+  .sort({ dateISO: -1 })
+  .limit(60)
+  .lean();
 
-    const mergedSnapshot = { ...(snapshot || {}), recentLogs };
+console.log("CYCLE-CHAT userId:", userId);
+console.log("CYCLE-CHAT recentLogs count:", recentLogs.length);
+console.log("CYCLE-CHAT most recent log:", recentLogs[0]);
+
+const lastStart = recentLogs.find(
+  (l) => l.periodStart === true || l.periodStart === "true"
+);const lastPeriodStartISO = lastStart?.dateISO;
+
+const enrichedSnapshot = {
+  ...(snapshot || {}),
+  recentLogs,
+  lastPeriodStartISO,
+};
+
+    // Hard-answer last period if asked (fast + reliable)
+    const lower = String(message).toLowerCase();
+    if (lower.includes("last period") || lower.includes("last cycle")) {
+      if (enrichedSnapshot.lastPeriodStartISO) {
+        return res.json({
+          answer: `Your most recent logged period start was ${enrichedSnapshot.lastPeriodStartISO}.`,
+        });
+      }
+      return res.json({
+        answer:
+          "I don’t have a logged period start date yet. Tap a day and mark it as Period Start so I can track this for you.",
+      });
+    }
 
     const model = genAI.getGenerativeModel({ model: "gemini-3-pro-preview" });
 
     const prompt = `
-You are "ThinkPink", a supportive cycle + nutrition assistant.
-Use ONLY the provided snapshot as your source of truth.
-If the answer isn't in the snapshot, say you don't have enough logged data yet and suggest what to track.
-Never diagnose. Keep answers short (2-5 sentences). If helpful, add 1 small bullet list.
-No bold formatting.
+You are ThinkPink, a supportive cycle + nutrition assistant.
+Use ONLY the snapshot data as truth. If it’s not in the snapshot, say you don’t have enough data yet.
+No diagnosis. Keep answers 2–5 sentences, no bold.
 
-Special rules:
-- If user asks about "day N", use mergedSnapshot.recentLogs filtered by cycleDay == N and summarize typical mood/energy/symptoms.
-- If fewer than 2 logs match, say not enough data yet.
-- If user asks "when was my last period", use mergedSnapshot.lastPeriodStartISO if present, otherwise say you don't know yet.
-- If user asks what to eat today, suggest general supportive foods based on todayPhase if present.
+Interpretation rules:
+- "day N of my cycle": use recentLogs where cycleDay == N. If <2 matches, say not enough data.
+- "how do I usually feel in luteal/follicular/ovulation/menstrual": filter recentLogs by phase and summarize typical mood/energy/symptoms.
+- "what should I eat today": use todayPhase if present; otherwise give a general balanced suggestion.
+- "when was my last period": use lastPeriodStartISO.
 
-SNAPSHOT:
-${JSON.stringify(mergedSnapshot, null, 2)}
+SNAPSHOT JSON:
+${JSON.stringify(enrichedSnapshot, null, 2)}
 
-USER:
+USER QUESTION:
 ${message}
 `;
 
     const result = await model.generateContent(prompt);
     const answer = result.response.text().trim();
-
+   
     res.json({ answer });
   } catch (e) {
     console.error("CYCLE CHAT ERROR:", e);
@@ -238,6 +262,92 @@ app.get("/logs/recent", async (req, res) => {
   } catch (e) {
     console.error("LOG RECENT ERROR:", e);
     res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+// Autocomplete donation places near user
+app.post("/impact/places-autocomplete", async (req, res) => {
+  try {
+    const { query, near } = req.body; // near: { lat, lng }
+    if (!query) return res.status(400).json({ error: "query required" });
+    if (!process.env.PLACES_API_KEY) return res.status(500).json({ error: "PLACES_API_KEY not set" });
+
+    const location = near?.lat && near?.lng ? `&location=${near.lat},${near.lng}&radius=50000` : "";
+    const url =
+      `https://maps.googleapis.com/maps/api/place/autocomplete/json` +
+      `?input=${encodeURIComponent(query)}` +
+      `&types=establishment${location}` +
+      `&key=${process.env.PLACES_API_KEY}`;
+
+    const r = await fetch(url);
+    const data = await r.json();
+
+    const suggestions = (data.predictions || []).slice(0, 6).map((p) => ({
+      placeId: p.place_id,
+      description: p.description,
+    }));
+
+    res.json({ ok: true, suggestions });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Resolve placeId -> full details (name/address/lat/lng)
+app.post("/impact/place-details", async (req, res) => {
+  try {
+    const { placeId } = req.body;
+    if (!placeId) return res.status(400).json({ error: "placeId required" });
+    if (!process.env.PLACES_API_KEY) return res.status(500).json({ error: "PLACES_API_KEY not set" });
+
+    const url =
+      `https://maps.googleapis.com/maps/api/place/details/json` +
+      `?place_id=${encodeURIComponent(placeId)}` +
+      `&fields=name,formatted_address,geometry` +
+      `&key=${process.env.PLACES_API_KEY}`;
+
+    const r = await fetch(url);
+    const data = await r.json();
+    const result = data.result;
+
+    if (!result) return res.status(404).json({ error: "Place not found" });
+
+    res.json({
+      ok: true,
+      place: {
+        placeId,
+        name: result.name,
+        address: result.formatted_address,
+        lat: result.geometry.location.lat,
+        lng: result.geometry.location.lng,
+      },
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Submit donation for approval (stores in MongoDB)
+app.post("/impact/submit-donation", async (req, res) => {
+  try {
+    const { userId, imageUrl, place } = req.body;
+    if (!userId) return res.status(400).json({ error: "userId required" });
+    if (!imageUrl) return res.status(400).json({ error: "imageUrl required" });
+    if (!place?.placeId) return res.status(400).json({ error: "place required" });
+
+    const doc = await DonationSubmission.create({
+      userId,
+      imageUrl,
+      placeId: place.placeId,
+      placeName: place.name,
+      address: place.address,
+      lat: place.lat,
+      lng: place.lng,
+      status: "pending",
+    });
+
+    res.json({ ok: true, submission: doc });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 // --------------------
