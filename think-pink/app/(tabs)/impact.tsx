@@ -7,6 +7,7 @@ import { Image, TextInput, Modal, ScrollView } from "react-native";
 import { getOrCreateUserId } from "../../lib/userId";
 import { placesAutocomplete, placeDetails, submitDonation } from "../../lib/impactClient";
 import { useRouter } from "expo-router";
+import { API_BASE } from "@/lib/config";
 type Coords = { latitude: number; longitude: number };
 
 export default function ImpactScreen() {
@@ -106,12 +107,21 @@ async function onSubmitDonation() {
 
   // const [centers, setCenters] = useState<any[]>([]);
 
-  useEffect(() => {
-  fetch("http://10.136.132.82:5000/locations")
-    .then((res) => res.json())
-    .then((data) => {console.log("CENTERS:", data); setCenters(data);})
+useEffect(() => {
+  fetch(`${API_BASE}/locations`)
+    .then(async (res) => {
+      const text = await res.text();
+      console.log("RAW SERVER RESPONSE:", text);
+
+      try {
+        const json = JSON.parse(text);
+        setCenters(json);
+      } catch {
+        console.log("NOT JSON — backend returned HTML or error page");
+      }
+    })
     .catch((err) => console.log("Fetch error:", err));
-  }, []);
+}, []);
 
   return (
     <><View style={{ flex: 1, backgroundColor: "#FDECEF", padding: 16, gap: 12 }}>
