@@ -1,1 +1,14 @@
-node_modules
+# Ignore the environment variables (CRITICAL for security)
+server/.env
+.env
+
+# Ignore the heavy library folders
+server/node_modules/
+node_modules/
+
+# Ignore build files
+dist/
+.expo/
+.env*.local
+.env
+server/.env
