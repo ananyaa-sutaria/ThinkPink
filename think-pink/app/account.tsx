@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../lib/AuthContext";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
-import { getWalletAddress } from "../lib/walletStore";
+import { getWalletAddress, setWalletAddress } from "../lib/walletStore";
+import { API_BASE } from "../lib/api";
 
 export default function AccountScreen() {
   const router = useRouter();
@@ -22,31 +23,34 @@ export default function AccountScreen() {
   }, []);
 
   const handleSave = async () => {
-    try {
-      const response = await fetch("http://10.136.237.136:5000/api/users/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: user?.id, // Using the unique ID from your schema
-          name: username,
-          wallet: wallet,
-          password: password,
-        }),
-      });
+  try {
+    // 1) save locally so Badges page can read it (mobile + web)
+    await setWalletAddress(wallet.trim());
 
-      if (response.ok) {
-        alert("Changes saved to Database! ✅");
-        router.back();
-      } else {
-        const errorData = await response.json();
-        alert(`Error: ${errorData.error}`);
-      }
-    } catch (error) {
-      console.error(error);
-      alert("Could not connect to server. Check if terminal is running!");
+    // 2) save to backend (optional, but fine)
+    const response = await fetch(`${API_BASE}/api/users/sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: user?.id,
+        name: username,
+        wallet: wallet.trim(),
+        password: password,
+      }),
+    });
+
+    if (response.ok) {
+      alert("Changes saved ✅");
+      router.back();
+    } else {
+      const errorData = await response.json().catch(() => ({}));
+      alert(`Error: ${errorData?.error || "Unknown error"}`);
     }
-  };
-
+  } catch (error) {
+    console.error(error);
+    alert("Could not connect to server. Check if terminal is running!");
+  }
+};
   const handleSignOut = () => {
     try {
       signOut();
@@ -85,24 +89,67 @@ export default function AccountScreen() {
       </View>
 
       {/* Wallet Card */}
-      <View style={styles.card}>
-        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-          <Text style={styles.label}>Solana Wallet</Text>
-          <Text style={{ color: "#D81B60", fontSize: 12, fontWeight: "700" }}>Devnet</Text>
-        </View>
-        
-        <Text style={styles.walletText}>{wallet ? shortWallet : "No wallet connected"}</Text>
-        
-        {wallet && (
-          <Pressable
-            onPress={() => Clipboard.setStringAsync(wallet)}
-            style={styles.copyButton}
-          >
-            <Ionicons name="copy-outline" size={14} color="#D81B60" />
-            <Text style={styles.copyText}>Copy Full Address</Text>
-          </Pressable>
-        )}
-      </View>
+<View style={styles.card}>
+  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+    <Text style={styles.label}>Solana Wallet</Text>
+    <Text style={{ color: "#D81B60", fontSize: 12, fontWeight: "700" }}>Devnet</Text>
+  </View>
+
+  <TextInput
+    style={styles.input}
+    placeholder="Paste your Solana wallet address"
+    autoCapitalize="none"
+    autoCorrect={false}
+    value={wallet}
+    onChangeText={setWallet}
+  />
+
+  <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
+    <Pressable
+      onPress={async () => {
+        const clip = await Clipboard.getStringAsync();
+        if (clip) setWallet(clip.trim());
+      }}
+      style={{
+        backgroundColor: "#FDECEF",
+        borderRadius: 999,
+        paddingVertical: 10,
+        paddingHorizontal: 14,
+      }}
+    >
+      <Text style={{ color: "#333", fontWeight: "700" }}>Paste</Text>
+    </Pressable>
+
+    <Pressable
+      onPress={async () => {
+        if (!wallet.trim()) {
+          alert("Paste a wallet address first.");
+          return;
+        }
+        await setWalletAddress(wallet.trim());
+        alert("Saved wallet locally ✅");
+      }}
+      style={{
+        backgroundColor: "#D81B60",
+        borderRadius: 999,
+        paddingVertical: 10,
+        paddingHorizontal: 14,
+      }}
+    >
+      <Text style={{ color: "#FFF", fontWeight: "700" }}>Save wallet</Text>
+    </Pressable>
+  </View>
+
+  {wallet ? (
+    <Pressable
+      onPress={() => Clipboard.setStringAsync(wallet)}
+      style={styles.copyButton}
+    >
+      <Ionicons name="copy-outline" size={14} color="#D81B60" />
+      <Text style={styles.copyText}>Copy Full Address</Text>
+    </Pressable>
+  ) : null}
+</View>
 
       <Pressable onPress={handleSave} style={styles.button}>
         <Text style={styles.buttonText}>Save Changes</Text>
