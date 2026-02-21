@@ -1,53 +1,135 @@
-import { View, Text, TextInput, Pressable } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { useState } from "react";
+import { useAuth } from "../lib/AuthContext";
 
 export default function AccountScreen() {
   const router = useRouter();
-  const [name, setName] = useState("Anyaa");
-  const [wallet, setWallet] = useState("");
+  const { user, signOut } = useAuth();
+
+  const [username, setUsername] = useState(user?.name || "");
+  const [wallet, setWallet] = useState(user?.wallet || "");
+  const [password, setPassword] = useState("");
+
+  const handleSave = async () => {
+    try {
+      const response = await fetch("http://localhost:5000/api/users/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user?.id,
+          name: username,
+          wallet: wallet,
+          password: password,
+        }),
+      });
+
+      if (response.ok) {
+        alert("Changes saved to Database! ✅");
+        router.back();
+      } else {
+        const errorData = await response.json();
+        alert(`Error: ${errorData.error}`);
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Could not connect to server. Check if terminal is running!");
+    }
+  };
+
+  // --- ADDED SIGN OUT LOGIC ---
+  const handleSignOut = () => {
+    try {
+      signOut(); // Clears the user from AuthContext
+      router.replace("/login"); // Moves you back to the login screen
+    } catch (error) {
+      console.error("Sign out error:", error);
+    }
+  };
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#FDECEF", padding: 16, gap: 12 }}>
-      <View style={{ backgroundColor: "#FFF", borderRadius: 20, padding: 16, gap: 6 }}>
-        <Text style={{ color: "#333", fontSize: 18, fontWeight: "800" }}>Account</Text>
-        <Text style={{ color: "#555" }}>Edit profile + settings</Text>
+    <View style={styles.container}>
+      <Text style={styles.header}>Account Settings</Text>
+
+      <View style={styles.card}>
+        <Text style={styles.label}>Username</Text>
+        <TextInput
+          style={styles.input}
+          defaultValue={username}
+          onChangeText={setUsername}
+        />
       </View>
 
-      <Field label="Name" value={name} onChangeText={setName} placeholder="Your name" />
-      <Field label="Solana wallet (devnet)" value={wallet} onChangeText={setWallet} placeholder="Paste address (optional for now)" />
+      <View style={styles.card}>
+        <Text style={styles.label}>Solana Wallet</Text>
+        <TextInput
+          style={styles.input}
+          defaultValue={wallet}
+          onChangeText={setWallet}
+        />
+      </View>
 
-      <Pressable
-        onPress={() => router.back()}
-        style={{ backgroundColor: "#D81B60", borderRadius: 999, paddingVertical: 12, alignItems: "center" }}
+      <View style={styles.card}>
+        <Text style={styles.label}>Update Password</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="••••••••"
+          secureTextEntry
+          onChangeText={setPassword}
+        />
+      </View>
+
+      <Pressable 
+        onPress={handleSave} 
+        style={({ pressed }) => [styles.button, { opacity: pressed ? 0.7 : 1 }]}
       >
-        <Text style={{ color: "#FFF", fontWeight: "700" }}>Done</Text>
+        <Text style={styles.buttonText}>Save Changes</Text>
+      </Pressable>
+
+      {/* --- IMPROVED SIGN OUT BUTTON --- */}
+      <Pressable 
+        onPress={handleSignOut} 
+        style={({ pressed }) => [
+          styles.signOutButton, 
+          { backgroundColor: pressed ? "#FFEBEE" : "transparent" }
+        ]}
+      >
+        <Text style={styles.signOutText}>Sign Out</Text>
       </Pressable>
     </View>
   );
 }
 
-function Field({
-  label,
-  value,
-  onChangeText,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChangeText: (t: string) => void;
-  placeholder: string;
-}) {
-  return (
-    <View style={{ backgroundColor: "#FFF", borderRadius: 20, padding: 16, gap: 8 }}>
-      <Text style={{ color: "#333", fontWeight: "800" }}>{label}</Text>
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor="#999"
-        style={{ borderWidth: 1, borderColor: "#F48FB1", borderRadius: 16, padding: 12, color: "#333" }}
-      />
-    </View>
-  );
-}
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: "#FDECEF", padding: 20 },
+  header: { fontSize: 24, fontWeight: "900", color: "#D81B60", marginBottom: 20 },
+  card: { backgroundColor: "#FFF", borderRadius: 15, padding: 15, marginBottom: 15 },
+  label: { fontWeight: "bold", marginBottom: 5, color: "#333" },
+  input: {
+    borderWidth: 1,
+    borderColor: "#F48FB1",
+    borderRadius: 10,
+    padding: 12,
+    color: "#000",
+    backgroundColor: "#FFF",
+  },
+  button: {
+    backgroundColor: "#D81B60",
+    padding: 18,
+    borderRadius: 99,
+    alignItems: "center",
+    marginTop: 10,
+  },
+  buttonText: { color: "#FFF", fontWeight: "bold", fontSize: 18 },
+  signOutButton: { 
+    marginTop: 30, 
+    padding: 15, 
+    borderRadius: 15, 
+    alignItems: "center" 
+  },
+  signOutText: { 
+    color: "#D81B60", 
+    fontWeight: "bold", 
+    fontSize: 16 
+  },
+});
