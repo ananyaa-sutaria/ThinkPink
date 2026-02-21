@@ -1,5 +1,5 @@
 // app/(tabs)/impact.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Modal,
   TextInput,
   ScrollView,
+  Platform,
 } from "react-native";
 import { useProgress } from "../../lib/progressContext";
 import * as ImagePicker from "expo-image-picker";
@@ -26,6 +27,8 @@ export default function ImpactScreen() {
   const [deviceUserId, setDeviceUserId] = useState("");
   const [wallet, setWallet] = useState("");
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [permDenied, setPermDenied] = useState(false);
+  const [centers, setCenters] = useState<any[]>([]);
 
   const [photo, setPhoto] = useState<{ uri: string; name: string; type: string } | null>(null);
 
@@ -37,6 +40,7 @@ export default function ImpactScreen() {
   const [mySubmissions, setMySubmissions] = useState<any[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
+  const [donateOpen, setDonateOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -48,10 +52,25 @@ export default function ImpactScreen() {
 
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === "granted") {
+        if (status !== "granted") {
+          setPermDenied(true);
+        } else {
+          setPermDenied(false);
           const loc = await Location.getCurrentPositionAsync({});
           setCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
         }
+      } catch {}
+    })();
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/locations`, {
+          headers: { "ngrok-skip-browser-warning": "true" },
+        });
+        const data = await res.json();
+        if (Array.isArray(data)) setCenters(data);
       } catch {}
     })();
   }, []);
@@ -201,78 +220,112 @@ export default function ImpactScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: "#FDECEF" }}
-      contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 110 }}
+      contentContainerStyle={{ padding: 16, paddingTop: 24, gap: 12, paddingBottom: 110 }}
     >
       <View style={styles.card}>
-        <Text style={styles.title}>Impact</Text>
-        <Text style={styles.sub}>Your points: {points}</Text>
-        <Text style={styles.hint}>
-          Submit a donation photo + location. We’ll verify and mint an on-chain Impact badge.
-        </Text>
+        <Text style={styles.hint}>Find menstrual product donation centers near you and log your donations here</Text>
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>1) Donation proof</Text>
-        <Pressable onPress={pickPhoto} style={styles.primaryBtn}>
-          <Text style={styles.primaryText}>{photo ? "Change photo" : "Upload donation photo"}</Text>
-        </Pressable>
-        {photo ? <Text style={styles.small}>Selected: {photo.name}</Text> : null}
-      </View>
+        <Text style={styles.mapTitle}>Map</Text>
 
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>2) Donation location</Text>
-        <Pressable
-          onPress={() => {
-            setStatusMsg("");
-            setPickOpen(true);
-          }}
-          style={styles.secondaryBtn}
-        >
-          <Text style={styles.secondaryText}>{chosen ? "Change location" : "Search + choose location"}</Text>
-        </Pressable>
-
-        {chosen ? (
-          <Text style={styles.small}>
-            Chosen: {chosen.name} ({chosen.address})
+        {permDenied ? (
+          <Text style={{ color: "#C62828" }}>
+            Location permission denied. You can still log donations without map preview.
           </Text>
-        ) : null}
-
-        {!coords ? <Text style={styles.small}>Location not available (still works, just less accurate).</Text> : null}
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>3) Submit for approval</Text>
-        <Pressable onPress={submit} disabled={submitting} style={[styles.primaryBtn, submitting && { opacity: 0.7 }]}>
-          <Text style={styles.primaryText}>{submitting ? "Submitting…" : "Submit proof"}</Text>
-        </Pressable>
-
-        {statusMsg ? <Text style={{ color: "#333", marginTop: 8 }}>{statusMsg}</Text> : null}
-
-        <Text style={styles.small}>
-          Privacy: We store your photo + location in Mongo for review. On-chain we only anchor a proof hash + mint a
-          badge.
-        </Text>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>My submissions</Text>
-
-        <Pressable onPress={loadMySubmissions} style={styles.secondaryBtn}>
-          <Text style={styles.secondaryText}>Refresh</Text>
-        </Pressable>
-
-        {mySubmissions.length === 0 ? (
-          <Text style={styles.small}>No submissions yet.</Text>
+        ) : !coords ? (
+          <Text style={styles.small}>Getting your location…</Text>
+        ) : Platform.OS === "web" ? (
+          <View style={styles.webMapPlaceholder}>
+            <Text style={{ color: "#555" }}>Map preview is available on mobile.</Text>
+          </View>
         ) : (
-          mySubmissions.map((s) => (
-            <View key={s._id} style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#F3D0DB" }}>
-              <Text style={{ color: "#333" }}>{s.locationName}</Text>
-              <Text style={styles.small}>Status: {s.status}</Text>
-              {s.txMint ? <Text style={styles.small}>Mint tx: {String(s.txMint).slice(0, 18)}...</Text> : null}
-            </View>
-          ))
+          <NativeMap coords={coords} centers={centers} />
         )}
       </View>
+
+      <Pressable onPress={() => setDonateOpen(true)} style={styles.logDonationBtn}>
+        <Text style={styles.logDonationText}>Log a Donation</Text>
+      </Pressable>
+
+      <Modal visible={donateOpen} animationType="slide" onRequestClose={() => setDonateOpen(false)}>
+        <View style={{ flex: 1, backgroundColor: "#FDECEF", padding: 16 }}>
+          <ScrollView contentContainerStyle={{ gap: 12, paddingBottom: 30 }}>
+            <View style={styles.card}>
+              <Text style={styles.title}>Impact</Text>
+              <Text style={styles.sub}>Your points: {points}</Text>
+              <Text style={styles.hint}>
+                Submit a donation photo + location. We’ll verify and mint an on-chain Impact badge.
+              </Text>
+            </View>
+
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>1) Donation proof</Text>
+              <Pressable onPress={pickPhoto} style={styles.primaryBtn}>
+                <Text style={styles.primaryText}>{photo ? "Change photo" : "Upload donation photo"}</Text>
+              </Pressable>
+              {photo ? <Text style={styles.small}>Selected: {photo.name}</Text> : null}
+            </View>
+
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>2) Donation location</Text>
+              <Pressable
+                onPress={() => {
+                  setStatusMsg("");
+                  setPickOpen(true);
+                }}
+                style={styles.secondaryBtn}
+              >
+                <Text style={styles.secondaryText}>{chosen ? "Change location" : "Search + choose location"}</Text>
+              </Pressable>
+
+              {chosen ? (
+                <Text style={styles.small}>
+                  Chosen: {chosen.name} ({chosen.address})
+                </Text>
+              ) : null}
+            </View>
+
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>3) Submit for approval</Text>
+              <Pressable onPress={submit} disabled={submitting} style={[styles.primaryBtn, submitting && { opacity: 0.7 }]}>
+                <Text style={styles.primaryText}>{submitting ? "Submitting…" : "Submit proof"}</Text>
+              </Pressable>
+
+              {statusMsg ? <Text style={{ color: "#333", marginTop: 8 }}>{statusMsg}</Text> : null}
+
+              <Text style={styles.small}>
+                Privacy: We store your photo + location in Mongo for review. On-chain we only anchor a proof hash + mint
+                a badge.
+              </Text>
+            </View>
+
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>My submissions</Text>
+
+              <Pressable onPress={loadMySubmissions} style={styles.secondaryBtn}>
+                <Text style={styles.secondaryText}>Refresh</Text>
+              </Pressable>
+
+              {mySubmissions.length === 0 ? (
+                <Text style={styles.small}>No submissions yet.</Text>
+              ) : (
+                mySubmissions.map((s) => (
+                  <View key={s._id} style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#F3D0DB" }}>
+                    <Text style={{ color: "#333" }}>{s.locationName}</Text>
+                    <Text style={styles.small}>Status: {s.status}</Text>
+                    {s.txMint ? <Text style={styles.small}>Mint tx: {String(s.txMint).slice(0, 18)}...</Text> : null}
+                  </View>
+                ))
+              )}
+            </View>
+
+            <Pressable onPress={() => setDonateOpen(false)} style={styles.backBtn}>
+              <Text style={{ color: "#D81B60" }}>Close</Text>
+            </Pressable>
+          </ScrollView>
+        </View>
+      </Modal>
 
       <Modal visible={pickOpen} animationType="slide" onRequestClose={() => setPickOpen(false)}>
         <View style={{ flex: 1, backgroundColor: "#FDECEF", padding: 16, gap: 12 }}>
@@ -341,7 +394,7 @@ export default function ImpactScreen() {
           </View>
 
           {statusMsg ? (
-            <View style={[styles.card, { padding: 12 }]}> 
+            <View style={[styles.card, { padding: 12 }]}>
               <Text style={{ color: "#C62828" }}>{statusMsg}</Text>
             </View>
           ) : null}
@@ -352,17 +405,90 @@ export default function ImpactScreen() {
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: "#FFF", borderRadius: 20, padding: 16, gap: 10 },
+  card: {
+    backgroundColor: "#FFF",
+    borderRadius: 14,
+    padding: 16,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: "#ea9ab2",
+    shadowColor: "#ea9ab2",
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 10,
+  },
   title: { fontSize: 18, color: "#333", fontWeight: "800" },
   sub: { color: "#555" },
   hint: { color: "#555" },
+  mapTitle: { color: "#2D2230", fontSize: 32, fontFamily: "Onest-Bold" },
   sectionTitle: { color: "#333", fontWeight: "800" },
   primaryBtn: { backgroundColor: "#D81B60", borderRadius: 999, paddingVertical: 12, alignItems: "center" },
   primaryText: { color: "#FFF", fontWeight: "700" },
+  logDonationBtn: { backgroundColor: "#BA5D84", borderRadius: 10, paddingVertical: 12, alignItems: "center" },
+  logDonationText: { color: "#FFF", fontFamily: "Onest-Bold", fontSize: 20 },
   secondaryBtn: { backgroundColor: "#FDECEF", borderRadius: 999, paddingVertical: 12, alignItems: "center" },
   secondaryText: { color: "#333", fontWeight: "700" },
   small: { color: "#777", fontSize: 12 },
   input: { borderWidth: 1, borderColor: "#F48FB1", borderRadius: 12, padding: 12, backgroundColor: "#FFF" },
   resultRow: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#F3D0DB" },
   backBtn: { alignSelf: "flex-start", marginTop: 6 },
+  mapContainer: {
+    height: 180,
+    borderRadius: 14,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#F3D0DB",
+    backgroundColor: "#EFE1EC",
+  },
+  map: { width: "100%", height: "100%" },
+  webMapPlaceholder: {
+    minHeight: 120,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#F3D0DB",
+    backgroundColor: "#EFE1EC",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 12,
+  },
 });
+
+function NativeMap({ coords, centers }: { coords: { lat: number; lng: number }; centers: any[] }) {
+  const MapStuff = useMemo(() => {
+    const maps = require("react-native-maps");
+    return {
+      MapView: maps.default,
+      Marker: maps.Marker,
+    };
+  }, []);
+
+  const region = {
+    latitude: coords.lat,
+    longitude: coords.lng,
+    latitudeDelta: 0.05,
+    longitudeDelta: 0.05,
+  };
+
+  const MapView = MapStuff.MapView;
+  const Marker = MapStuff.Marker;
+
+  return (
+    <View style={styles.mapContainer}>
+      <MapView style={styles.map} region={region} showsUserLocation>
+        {centers.map((center, idx) => {
+          const lat = center?.coordinates?.latitude;
+          const lng = center?.coordinates?.longitude;
+          if (typeof lat !== "number" || typeof lng !== "number") return null;
+          return (
+            <Marker
+              key={center?._id || `center-${idx}`}
+              coordinate={{ latitude: lat, longitude: lng }}
+              title={center?.name || "Donation center"}
+              description={center?.description || ""}
+            />
+          );
+        })}
+      </MapView>
+    </View>
+  );
+}
