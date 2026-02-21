@@ -4,7 +4,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
-import mongoose from "mongoose";
+import CycleLog from "./models/CycleLog.js";
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
@@ -19,6 +19,9 @@ import BadgeMint from "./models/BadgeMint.js";
 import { createPointsMintOnce, awardPointsToWallet } from "./solanaPoints.js";
 
 dotenv.config();
+console.log("ENV has MONGO_URI?", !!process.env.MONGO_URI);
+import mongoose from "mongoose";
+
 
 const app = express();
 app.use(cors());
@@ -42,15 +45,14 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 // Mongo
 // --------------------
 async function connectMongo() {
-  const uri = process.env.MONGO_URI;
+  const uri = process.env.MONGO_URI || process.env.MONGODB_URI;
   if (!uri) {
-    console.warn("MONGO_URI not set. Badge minting 'only once' will NOT work.");
+    console.warn("Mongo disabled: set MONGO_URI in server/.env");
     return;
   }
   await mongoose.connect(uri);
   console.log("Mongo connected");
 }
-
 // --------------------
 // Server wallet
 // --------------------
@@ -175,7 +177,43 @@ app.post("/solana/award-badge", async (req, res) => {
     return res.status(500).json({ error: e.message });
   }
 });
+app.post("/logs/save", async (req, res) => {
+  try {
+    const log = req.body;
+    if (!log.userId || !log.dateISO) {
+      return res.status(400).json({ error: "userId and dateISO are required" });
+    }
 
+    // upsert = create if not exists, update if exists (same day)
+    const saved = await CycleLog.findOneAndUpdate(
+      { userId: log.userId, dateISO: log.dateISO },
+      { $set: log },
+      { new: true, upsert: true }
+    ).lean();
+
+    res.json({ ok: true, log: saved });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/logs/recent", async (req, res) => {
+  try {
+    const userId = String(req.query.userId || "");
+    if (!userId) return res.status(400).json({ error: "userId is required" });
+
+    const limit = Math.min(Number(req.query.limit || 60), 120);
+
+    const logs = await CycleLog.find({ userId })
+      .sort({ dateISO: -1 })
+      .limit(limit)
+      .lean();
+
+    res.json({ ok: true, logs });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 // Gemini quiz
 app.post("/ai/quiz", async (req, res) => {
   try {
@@ -237,6 +275,18 @@ Rules:
 app.post("/ai/cycle-chat", async (req, res) => {
   try {
     const { message, snapshot } = req.body;
+    const userId = snapshot?.userId || "guest";
+
+    const logs = await CycleLog.find({ userId })
+      .sort({ dateISO: -1 })
+      .limit(60)
+      .lean();
+
+    // 🔥 inject logs into snapshot so Gemini can use them
+    const enhancedSnapshot = {
+      ...snapshot,
+      recentLogs: logs,
+    };
 
     const model = genAI.getGenerativeModel({ model: "gemini-3-pro-preview" });
 
@@ -249,11 +299,10 @@ Never diagnose. Keep answers short (2-5 sentences). If helpful, add 1 small bull
 Special rule:
 - If the user asks about "day N", use snapshot.recentLogs filtered by cycleDay == N and summarize typical mood/energy/symptoms.
 - If fewer than 2 logs match, say not enough data yet.
-- If a user asks for meal plan, use their time of cycle and provide data based on that, not any type of meal plan
-- Make the output clean. don't make it messy for too much, like **.
+- If a user asks what to eat, base it on their current phase.
 
 SNAPSHOT:
-${JSON.stringify(snapshot, null, 2)}
+${JSON.stringify(enhancedSnapshot, null, 2)}
 
 USER QUESTION:
 ${message}
@@ -268,6 +317,7 @@ ${message}
     res.status(500).json({ error: String(e?.message || e) });
   }
 });
+
 app.post("/ai/daily-insight", async (req, res) => {
   try {
     const {
@@ -326,9 +376,12 @@ selfCareTip (string, 1 sentence).
 // --------------------
 connectMongo()
   .then(() => {
-    app.listen(PORT, () => console.log(`Server running on ${PORT}`));
+    app.listen(PORT, () => {
+      console.log(`Server running on ${PORT}`);
+    });
   })
-  .catch((e) => {
-    console.error("Failed to start server:", e);
-    process.exit(1);
+  .catch((err) => {
+    console.error("Failed to start server:", err);
   });
+
+

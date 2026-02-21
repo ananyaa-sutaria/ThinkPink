@@ -1,6 +1,7 @@
 const API_BASE = "http://localhost:5000";
 
 export type UserSnapshot = {
+  userId: string;
   todayISO: string;
   todayPhase?: string;
   lastPeriodStartISO?: string;
@@ -14,10 +15,13 @@ export type UserSnapshot = {
     dateISO: string;
     cycleDay?: number;
     phase?: string;
-    mood?: number;   // 1-5
-    energy?: number; // 1-5
+    mood?: number;
+    energy?: number;
     symptoms?: string[];
     notes?: string;
+    periodStart?: boolean;
+    periodEnd?: boolean;
+    spotting?: boolean;
   }>;
 };
 
