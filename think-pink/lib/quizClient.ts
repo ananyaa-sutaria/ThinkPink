@@ -1,5 +1,7 @@
 import axios from "axios";
-import { API_BASE } from "./config";
+import { API_BASE } from "./api";
+import { postJSON } from "./http";
+
 
 export type QuizChoice = "A" | "B" | "C" | "D";
 
