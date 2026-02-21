@@ -1,18 +1,19 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 
-// 1. Updated to match your Backend (index.js)
 interface User {
-  id: string; // Changed from 'id' to 'userId'
+  userId: string;
   name: string;
   wallet?: string;
 }
 
 interface AuthContextType {
   user: User | null;
-  isLoading: boolean; // Changed from 'loading' to 'isLoading' to match your _layout.tsx
+  isLoading: boolean;
   signIn: (userData: User) => void;
   signOut: () => void;
 }
+
+
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
@@ -23,15 +24,10 @@ const AuthContext = createContext<AuthContextType>({
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true); // Matches the new name
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // For the Hackathon: Simulate checking for an existing session
-    const timer = setTimeout(() => {
-      // Logic: If there's a stored user in local storage, load it here
-      setIsLoading(false);
-    }, 1000);
-
+    const timer = setTimeout(() => setIsLoading(false), 300);
     return () => clearTimeout(timer);
   }, []);
 
@@ -50,5 +46,4 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Custom hook to use the auth state
 export const useAuth = () => useContext(AuthContext);

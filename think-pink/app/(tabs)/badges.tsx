@@ -6,6 +6,8 @@ import { useRouter } from "expo-router";
 
 import { useProgress } from "../../lib/progressContext";
 import { awardBadge } from "../../lib/solanaClient";
+import { API_BASE } from "../../lib/api";
+import { useAuth } from "../../lib/AuthContext";
 
 const KEY_WALLET = "tp_wallet_address";
 
@@ -25,15 +27,40 @@ function BadgePill({ label, color }: { label: string; color: string }) {
   );
 }
 
+type Submission = {
+  _id: string;
+  userId: string;
+  walletAddress?: string;
+  locationName?: string;
+  locationLat?: number;
+  locationLng?: number;
+  photoUrl?: string;
+  proofHash?: string;
+  status: "pending" | "approved" | "rejected";
+  impactMint?: string;
+  txMint?: string;
+  txFreeze?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 export default function BadgesRewardsScreen() {
   const router = useRouter();
+  const { user } = useAuth();
 
   const {
-    cycleBadgeUnlocked,
-    cycleBadgeMinted,
     points,
     addPoints,
+    setPointsLive,
+
+    cycleBadgeUnlocked,
+    cycleBadgeMinted,
     setCycleBadgeMintedLive,
+
+    impactBadgeUnlocked,
+    impactBadgeMinted,
+    setImpactBadgeUnlockedLive,
+    setImpactBadgeMintedLive,
   } = useProgress();
 
   const [wallet, setWallet] = useState<string>("");
@@ -42,6 +69,10 @@ export default function BadgesRewardsScreen() {
   const [err, setErr] = useState<string>("");
   const [showRedeem, setShowRedeem] = useState(false);
 
+  const [loadingImpact, setLoadingImpact] = useState(false);
+  const [impactLatest, setImpactLatest] = useState<Submission | null>(null);
+  const [impactTx, setImpactTx] = useState<string>("");
+
   useEffect(() => {
     (async () => {
       const w = (await AsyncStorage.getItem(KEY_WALLET)) || "";
@@ -49,13 +80,73 @@ export default function BadgesRewardsScreen() {
     })();
   }, []);
 
-  const badgeStatus = useMemo(() => {
+  async function refreshImpactStatus() {
+    const uid = (user as any)?.userId || (user as any)?.id;
+    if (!uid) {
+      setImpactLatest(null);
+      setImpactTx("");
+      await setImpactBadgeUnlockedLive(false);
+      await setImpactBadgeMintedLive(false);
+      // 🔥 Sync server points
+        const pointsRes = await fetch(
+        `${API_BASE}/points/${encodeURIComponent(uid)}`,
+        { headers: { "ngrok-skip-browser-warning": "true" } }
+        );
+
+        const pointsData = await pointsRes.json();
+        if (pointsData?.ok) {
+        await setPointsLive(pointsData.points);
+        }
+      return;
+    }
+
+    setLoadingImpact(true);
+    try {
+      const res = await fetch(`${API_BASE}/impact/mine/${encodeURIComponent(uid)}`, {
+        headers: { "ngrok-skip-browser-warning": "true" },
+      });
+      const data = await res.json();
+
+      const subs: Submission[] = (data?.submissions || []) as Submission[];
+      const latest = subs[0] || null;
+      setImpactLatest(latest);
+
+      const anyApproved = subs.some((s) => s.status === "approved");
+      const minted = subs.find((s) => s.status === "approved" && !!s.txMint);
+
+      await setImpactBadgeUnlockedLive(anyApproved);
+      await setImpactBadgeMintedLive(!!minted);
+
+      setImpactTx(minted?.txMint || "");
+    } catch {
+      setImpactLatest(null);
+      setImpactTx("");
+      await setImpactBadgeUnlockedLive(false);
+      await setImpactBadgeMintedLive(false);
+    } finally {
+      setLoadingImpact(false);
+    }
+  }
+
+  // auto-refresh when user changes + when page mounts
+  useEffect(() => {
+    refreshImpactStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  const cycleBadgeStatus = useMemo(() => {
     if (cycleBadgeMinted) return { label: "Minted", color: "#2E7D32" };
     if (cycleBadgeUnlocked) return { label: "Unlocked", color: "#D81B60" };
     return { label: "Locked", color: "#8E8E8E" };
   }, [cycleBadgeUnlocked, cycleBadgeMinted]);
 
-  async function onMintBadge() {
+  const impactBadgeStatus = useMemo(() => {
+    if (impactBadgeMinted) return { label: "Minted", color: "#2E7D32" };
+    if (impactBadgeUnlocked) return { label: "Unlocked", color: "#D81B60" };
+    return { label: "Locked", color: "#8E8E8E" };
+  }, [impactBadgeUnlocked, impactBadgeMinted]);
+
+  async function onMintCycleBadge() {
     setErr("");
     setMintResult(null);
 
@@ -74,7 +165,7 @@ export default function BadgesRewardsScreen() {
 
     setMinting(true);
     try {
-      const r = await awardBadge(wallet); // server mints, no Phantom needed
+      const r = await awardBadge(wallet);
       setMintResult(r);
       await setCycleBadgeMintedLive(true);
     } catch (e: any) {
@@ -98,12 +189,20 @@ export default function BadgesRewardsScreen() {
     }
 
     await addPoints(-cost);
-    setMintResult({
-      signature: "demo",
-      explorer: "",
-      note: `Redeemed ${cost} points`,
-    });
+    setMintResult({ signature: "demo", explorer: "", note: `Redeemed ${cost} points` });
   }
+
+  const impactSubtitle = useMemo(() => {
+    if (!user) return "Log in to sync approvals.";
+    if (loadingImpact) return "Checking your submissions…";
+    if (!impactLatest) return "Log a donation to unlock.";
+    if (impactLatest.status === "pending") return "Submitted. Waiting for approval.";
+    if (impactLatest.status === "rejected") return "Rejected. Try submitting again.";
+    if (impactLatest.status === "approved" && !impactLatest.txMint)
+      return "Approved. Minting may still be processing.";
+    if (impactLatest.status === "approved" && impactLatest.txMint) return "Approved and minted on devnet.";
+    return "Log a donation to unlock.";
+  }, [user, loadingImpact, impactLatest]);
 
   return (
     <ScrollView
@@ -112,7 +211,7 @@ export default function BadgesRewardsScreen() {
     >
       <View style={{ backgroundColor: "#FFF", padding: 16, borderRadius: 20, gap: 8 }}>
         <Text style={{ color: "#333", fontSize: 18 }}>Badges + Rewards</Text>
-        <Text style={{ color: "#555" }}>Learn, earn points, mint verified badges.</Text>
+        <Text style={{ color: "#555" }}>Learn, earn points, and mint verified badges.</Text>
       </View>
 
       <View
@@ -157,15 +256,14 @@ export default function BadgesRewardsScreen() {
       </View>
 
       <View style={{ gap: 12 }}>
+        {/* Cycle badge */}
         <View style={{ backgroundColor: "#FFF", padding: 16, borderRadius: 20, gap: 10 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <Text style={{ color: "#333", fontSize: 16 }}>Cycle Literacy Level 1</Text>
-            <BadgePill label={badgeStatus.label} color={badgeStatus.color} />
+            <BadgePill label={cycleBadgeStatus.label} color={cycleBadgeStatus.color} />
           </View>
 
-          <Text style={{ color: "#555" }}>
-            Complete the quiz to unlock. Mint once to verify on Solana devnet.
-          </Text>
+          <Text style={{ color: "#555" }}>Complete the quiz to unlock. Mint once to verify on Solana devnet.</Text>
 
           {!wallet ? (
             <Pressable
@@ -186,7 +284,7 @@ export default function BadgesRewardsScreen() {
 
           {cycleBadgeUnlocked && !cycleBadgeMinted ? (
             <Pressable
-              onPress={onMintBadge}
+              onPress={onMintCycleBadge}
               disabled={minting}
               style={{
                 backgroundColor: minting ? "#F48FB1" : "#D81B60",
@@ -213,10 +311,68 @@ export default function BadgesRewardsScreen() {
           ) : null}
         </View>
 
-        <View style={{ backgroundColor: "#FFF", padding: 16, borderRadius: 20, gap: 8, opacity: 0.85 }}>
-          <Text style={{ color: "#333", fontSize: 16 }}>Period Equity Supporter</Text>
-          <Text style={{ color: "#555" }}>Log a donation to unlock.</Text>
-          <BadgePill label="Locked" color="#8E8E8E" />
+        {/* Impact badge */}
+        <View style={{ backgroundColor: "#FFF", padding: 16, borderRadius: 20, gap: 10 }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <Text style={{ color: "#333", fontSize: 16 }}>Period Equity Supporter</Text>
+            <BadgePill label={impactBadgeStatus.label} color={impactBadgeStatus.color} />
+          </View>
+
+          <Text style={{ color: "#555" }}>{impactSubtitle}</Text>
+
+          <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
+            <Pressable
+              onPress={() => router.push("/(tabs)/impact")}
+              style={{
+                backgroundColor: "#FDECEF",
+                borderRadius: 999,
+                paddingVertical: 10,
+                paddingHorizontal: 14,
+              }}
+            >
+              <Text style={{ color: "#333" }}>Go to Impact</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={refreshImpactStatus}
+              style={{
+                backgroundColor: "#D81B60",
+                borderRadius: 999,
+                paddingVertical: 10,
+                paddingHorizontal: 14,
+                opacity: loadingImpact ? 0.7 : 1,
+              }}
+              disabled={loadingImpact}
+            >
+              <Text style={{ color: "#FFF" }}>{loadingImpact ? "Refreshing…" : "Refresh status"}</Text>
+            </Pressable>
+          </View>
+
+          {impactLatest ? (
+            <View style={{ backgroundColor: "#FDECEF", padding: 12, borderRadius: 16, gap: 6 }}>
+              <Text style={{ color: "#333" }}>
+                Latest: {impactLatest.locationName || "Donation"} ({impactLatest.status})
+              </Text>
+
+              {impactLatest.photoUrl ? (
+                <Pressable onPress={() => Linking.openURL(impactLatest.photoUrl!)}>
+                  <Text style={{ color: "#D81B60" }}>View uploaded photo</Text>
+                </Pressable>
+              ) : null}
+
+              {impactLatest.status === "approved" && (impactLatest.txMint || impactTx) ? (
+                <Pressable
+                  onPress={() =>
+                    Linking.openURL(
+                      `https://explorer.solana.com/tx/${impactLatest.txMint || impactTx}?cluster=devnet`
+                    )
+                  }
+                >
+                  <Text style={{ color: "#D81B60" }}>View mint tx</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
         </View>
       </View>
 
@@ -278,7 +434,8 @@ export default function BadgesRewardsScreen() {
 
       <View style={{ paddingBottom: 24 }}>
         <Text style={{ color: "#777", fontSize: 12 }}>
-          Minting uses your server wallet on devnet. No Phantom required.
+          Cycle badge minting uses your server wallet on devnet. Impact badge is minted when an admin approves the
+          donation.
         </Text>
       </View>
     </ScrollView>

@@ -1,94 +1,224 @@
-// server/geoRoutes.js (or inside server/index.js)
+// server/impactRoutes.js
 import express from "express";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import crypto from "crypto";
+import DonationSubmission from "./models/donationSubmission.js";
+import UserPoints from "./models/userPoints.js";
+import { Connection, PublicKey, Keypair, clusterApiUrl } from "@solana/web3.js";
+import { getOrCreateAssociatedTokenAccount, mintTo } from "@solana/spl-token";
+import User from "./models/user.js";
 
 const router = express.Router();
 
-// Haversine distance in km
-function haversineKm(aLat, aLng, bLat, bLng) {
-  const toRad = (d) => (d * Math.PI) / 180;
-  const R = 6371;
-  const dLat = toRad(bLat - aLat);
-  const dLng = toRad(bLng - aLng);
-  const lat1 = toRad(aLat);
-  const lat2 = toRad(bLat);
+// ---------- uploads ----------
+const uploadsDir = path.join(process.cwd(), "uploads");
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-  const x =
-    Math.sin(dLat / 2) ** 2 +
-    Math.sin(dLng / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadsDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname || ".jpg") || ".jpg";
+    cb(null, `impact_${Date.now()}${ext}`);
+  },
+});
+const upload = multer({ storage });
 
-  return 2 * R * Math.asin(Math.sqrt(x));
+// ---------- solana ----------
+function loadServerKeypair() {
+  const kpPath = process.env.SOLANA_KEYPAIR_PATH || "./server-wallet.json";
+  const abs = path.resolve(process.cwd(), kpPath);
+  const secret = JSON.parse(fs.readFileSync(abs, "utf-8"));
+  return Keypair.fromSecretKey(Uint8Array.from(secret));
 }
 
-router.get("/geo/search", async (req, res) => {
+const CLUSTER = process.env.SOLANA_CLUSTER || "devnet";
+const RPC_URL = process.env.SOLANA_RPC_URL || clusterApiUrl(CLUSTER);
+const connection = new Connection(RPC_URL, "confirmed");
+const serverWallet = loadServerKeypair();
+
+// ---------- routes ----------
+
+// POST /impact/submit (multipart/form-data: photo + fields)
+router.post("/impact/submit", upload.single("photo"), async (req, res) => {
   try {
-    const q = String(req.query.q || "").trim();
-    const lat = req.query.lat != null ? Number(req.query.lat) : null;
-    const lng = req.query.lng != null ? Number(req.query.lng) : null;
+    const {
+      userId,
+      walletAddress = "",
+      locationName,
+      locationLat,
+      locationLng,
+    } = req.body || {};
 
-    if (!q) return res.status(400).json({ error: "q is required" });
+    if (!userId) return res.status(400).json({ error: "userId required" });
+    if (!req.file) return res.status(400).json({ error: "photo required" });
+    if (!locationName) return res.status(400).json({ error: "locationName required" });
 
-    // Nominatim requires a User-Agent / Referer header
-    // (Node fetch is global in Node 18+, if not, npm i node-fetch and import it)
-    const params = new URLSearchParams({
-      q,
-      format: "json",
-      addressdetails: "0",
-      limit: "12",
+    const lat = Number(locationLat);
+    const lng = Number(locationLng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ error: "locationLat/locationLng invalid" });
+    }
+
+    const publicBase = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
+    const photoUrl = `${publicBase}/uploads/${req.file.filename}`;
+
+    const fileBuffer = fs.readFileSync(req.file.path);
+    const proofHash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
+
+    const doc = await DonationSubmission.create({
+      userId,
+      walletAddress,
+      locationName,
+      locationLat: lat,
+      locationLng: lng,
+      photoUrl,
+      proofHash,
+      status: "pending",
     });
 
-    // Bias locally if we have user coords:
-    // A ~20km bounding box. Adjust if you want wider results.
-    if (lat != null && lng != null && Number.isFinite(lat) && Number.isFinite(lng)) {
-      const delta = 0.18; // ~20km-ish latitude span (rough)
-      const left = lng - delta;
-      const right = lng + delta;
-      const top = lat + delta;
-      const bottom = lat - delta;
+    return res.json({ ok: true, submission: doc });
+  } catch (e) {
+    console.error("IMPACT SUBMIT ERROR:", e);
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
+});
 
-      // viewbox order: left,top,right,bottom
-      params.set("viewbox", `${left},${top},${right},${bottom}`);
-      params.set("bounded", "1"); // force results inside box
+// GET /impact/pending (admin)
+router.get("/impact/pending", async (req, res) => {
+  try {
+    const items = await DonationSubmission.find({ status: "pending" })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean();
+
+    return res.json({ ok: true, submissions: items });
+  } catch (e) {
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// GET /impact/mine/:userId
+router.get("/impact/mine/:userId", async (req, res) => {
+  try {
+    const userId = String(req.params.userId || "").trim();
+    if (!userId) return res.status(400).json({ error: "userId required" });
+
+    const submissions = await DonationSubmission.find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean();
+
+    return res.json({ ok: true, submissions });
+  } catch (e) {
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// POST /impact/approve (admin)
+// body: { submissionId }
+router.post("/impact/approve", async (req, res) => {
+  try {
+    const { submissionId } = req.body || {};
+    if (!submissionId) return res.status(400).json({ error: "submissionId required" });
+
+    const sub = await DonationSubmission.findById(submissionId);
+    if (!sub) return res.status(404).json({ error: "submission not found" });
+
+    if (sub.status === "approved") {
+      return res.json({ ok: true, submission: sub, note: "Already approved." });
+    }const AWARD = 10;
+    if (!sub.pointsAwarded) {
+      await UserPoints.findOneAndUpdate(
+        { userId: sub.userId },
+        { $inc: { points: AWARD } },
+        { upsert: true, new: true }
+      );
+
+      sub.pointsAwarded = true;
+      sub.pointsAwardedAt = new Date();
+      sub.pointsAwardedAmount = AWARD;
     }
 
-    const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
 
-    const r = await fetch(url, {
-      headers: {
-        "User-Agent": "ThinkPink/1.0 (student project)",
-        "Accept-Language": "en",
-      },
-    });
+    const BADGE_MINT = process.env.BADGE_MINT; // read from env at request time
+    if (!BADGE_MINT) return res.status(500).json({ error: "BADGE_MINT not set" });
+    if (!sub.walletAddress) return res.status(400).json({ error: "walletAddress missing on submission" });
 
-    if (!r.ok) {
-      const text = await r.text();
-      return res.status(500).json({ error: `Geocoder failed: ${text.slice(0, 120)}` });
-    }
+    const mint = new PublicKey(BADGE_MINT);
+    const owner = new PublicKey(sub.walletAddress);
 
-    const raw = await r.json();
+    const ata = await getOrCreateAssociatedTokenAccount(
+      connection,
+      serverWallet, // payer
+      mint,
+      owner
+    );
 
-    let results = (raw || []).map((x) => ({
-      name: x.display_name,
-      lat: Number(x.lat),
-      lng: Number(x.lon),
-      // compute distance if we can
-      distanceKm:
-        lat != null && lng != null && Number.isFinite(lat) && Number.isFinite(lng)
-          ? haversineKm(lat, lng, Number(x.lat), Number(x.lon))
-          : null,
-    }));
+    const signature = await mintTo(
+      connection,
+      serverWallet, // payer + authority
+      mint,
+      ata.address,
+      serverWallet, // mint authority
+      1
+    );
 
-    // sort nearest first when we have distance
-    if (results.length && results[0].distanceKm != null) {
-      results.sort((a, b) => a.distanceKm - b.distanceKm);
-    }
+    sub.status = "approved";
+    sub.impactMint = BADGE_MINT;
+    sub.txMint = signature;
+    // inside /impact/approve, after mint succeeds, before return:
 
-    // return only what the app expects
-    res.json({
+if (!sub.pointsAwarded) {
+  await User.updateOne(
+    { userId: sub.userId },
+    { $inc: { points: 10 } }
+  );
+  sub.pointsAwarded = true;
+}
+await sub.save();
+    await sub.save();
+
+
+    return res.json({
       ok: true,
-      results: results.map(({ name, lat, lng }) => ({ name, lat, lng })),
+      submission: sub,
+      explorer: `https://explorer.solana.com/tx/${signature}?cluster=${CLUSTER}`,
     });
   } catch (e) {
-    res.status(500).json({ error: e?.message || "Geo search failed" });
+    console.error("IMPACT APPROVE ERROR:", e);
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// POST /impact/reject (admin)
+// body: { submissionId }
+router.post("/impact/reject", async (req, res) => {
+  try {
+    const { submissionId } = req.body || {};
+    if (!submissionId) return res.status(400).json({ error: "submissionId required" });
+
+    const doc = await DonationSubmission.findById(submissionId);
+    if (!doc) return res.status(404).json({ error: "submission not found" });
+
+    doc.status = "rejected";
+    await doc.save();
+
+    return res.json({ ok: true, submission: doc });
+  } catch (e) {
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+router.get("/points/:userId", async (req, res) => {
+  try {
+    const userId = String(req.params.userId || "").trim();
+    if (!userId) return res.status(400).json({ error: "userId required" });
+
+    const row = await UserPoints.findOne({ userId }).lean();
+    return res.json({ ok: true, points: row?.points || 0 });
+  } catch (e) {
+    return res.status(500).json({ error: String(e?.message || e) });
   }
 });
 

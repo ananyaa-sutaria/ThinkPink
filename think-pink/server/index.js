@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import fs from "fs";
+import multer from "multer";
 import path from "path";
 import mongoose from "mongoose";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -15,13 +16,19 @@ import DonationSubmission from "./models/donationSubmission.js";
 import impactRoutes from "./impactRoutes.js";
 import { makeDaoRouter } from "./daoRoutes.js";
 import geoRoutes from "./geoRoutes.js";
+import User from "./models/user.js";
+
 dotenv.config();
+console.log("BADGE_MINT =", process.env.BADGE_MINT);
 const app = express();
 app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 app.use(impactRoutes);            // if impactRoutes defines full paths like "/impact/submit"
 app.use(geoRoutes);
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
-app.use(express.json());
+
 app.get("/", (req, res) => res.send("OK"));
 // --------------------
 const PORT = process.env.PORT || 5000;
@@ -41,14 +48,9 @@ app.use(makeDaoRouter({ connection }));
 // --------------------
 // Mongo Setup
 // --------------------
-const userSchema = new mongoose.Schema({
-  userId: { type: String, required: true, unique: true },
-  name: { type: String, required: true },
-  password: { type: String, required: true },
-  wallet: { type: String, default: "" },
-  createdAt: { type: Date, default: Date.now }
-});
-const User = mongoose.model("User", userSchema);
+
+const UPLOAD_DIR = path.join(process.cwd(), "uploads");
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 async function connectMongo() {
   const uri = process.env.MONGO_URI;
@@ -476,6 +478,19 @@ app.get("/logs/recent", async (req, res) => {
   }
 });
 // Autocomplete donation places near user
+app.get("/points/:userId", async (req, res) => {
+  try {
+    const userId = String(req.params.userId || "").trim();
+    if (!userId) return res.status(400).json({ error: "userId required" });
+
+    const u = await User.findOne({ userId }).lean();
+    if (!u) return res.status(404).json({ error: "user not found" });
+
+    res.json({ ok: true, points: Number(u.points || 0) });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
 app.post("/impact/places-autocomplete", async (req, res) => {
   try {
     const { query, near } = req.body; // near: { lat, lng }
@@ -538,6 +553,39 @@ app.post("/impact/place-details", async (req, res) => {
 });
 
 // Submit donation for approval (stores in MongoDB)
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname || ".jpg");
+    cb(null, `donation_${Date.now()}${ext}`);
+  },
+});
+
+const upload = multer({ storage });
+
+// IMPORTANT: set this in .env to your ngrok URL so clients always get the right URL
+// PUBLIC_BASE_URL=https://xxxxx.ngrok-free.dev
+function getPublicBaseUrl(req) {
+  const envBase = process.env.PUBLIC_BASE_URL;
+  if (envBase) return envBase.replace(/\/$/, "");
+  // fallback (works locally, not always perfect behind tunnels)
+  const proto = req.headers["x-forwarded-proto"] || req.protocol;
+  const host = req.headers["x-forwarded-host"] || req.get("host");
+  return `${proto}://${host}`;
+}
+
+app.post("/impact/upload", upload.single("photo"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "photo is required" });
+
+    const base = getPublicBaseUrl(req);
+    const imageUrl = `${base}/uploads/${req.file.filename}`;
+
+    res.json({ ok: true, imageUrl });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "Upload failed" });
+  }
+});
 app.post("/impact/submit-donation", async (req, res) => {
   try {
     const { userId, imageUrl, place } = req.body;

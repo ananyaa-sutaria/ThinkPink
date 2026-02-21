@@ -18,6 +18,9 @@ const DonationSubmissionSchema = new mongoose.Schema(
     impactMint: { type: String, default: "" },
     txMint: { type: String, default: "" },
     txFreeze: { type: String, default: "" },
+    pointsAwarded: { type: Boolean, default: false },
+pointsAwardedAt: { type: Date, default: null },
+pointsAwardedAmount: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

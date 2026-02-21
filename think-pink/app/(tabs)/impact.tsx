@@ -18,11 +18,13 @@ import { getWalletAddress } from "../../lib/walletStore";
 import { API_BASE } from "../../lib/api";
 import type { PlaceSuggestion, PlaceDetails } from "../../lib/impactClient";
 import { submitImpact } from "../../lib/impactClient";
+import { useAuth } from "../../lib/AuthContext";
+
 
 export default function ImpactScreen() {
   const { points, addPoints } = useProgress();
-
-  const [userId, setUserId] = useState("");
+  const { user } = useAuth();
+const [deviceUserId, setDeviceUserId] = useState("");
   const [wallet, setWallet] = useState("");
 
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -34,31 +36,52 @@ export default function ImpactScreen() {
   const [results, setResults] = useState<PlaceSuggestion[]>([]);
   const [chosen, setChosen] = useState<PlaceDetails | null>(null);
   const [loadingGeo, setLoadingGeo] = useState(false);
-
+    const [mySubmissions, setMySubmissions] = useState<any[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
+  
 
   useEffect(() => {
-    (async () => {
-      const uid = await getOrCreateUserId();
-      setUserId(uid);
+  (async () => {
+    const uid = await getOrCreateUserId();
+    setDeviceUserId(uid);
 
-      const w = await getWalletAddress();
-      setWallet(w || "");
+    const w = await getWalletAddress();
+    setWallet(w || "");
 
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === "granted") {
-          const loc = await Location.getCurrentPositionAsync({});
-          setCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
-        }
-      } catch {
-        // ignore
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === "granted") {
+        const loc = await Location.getCurrentPositionAsync({});
+        setCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
       }
-    })();
-  }, []);
-
+    } catch {}
+  })();
+}, []);
+const submitUserId = (user as any)?.userId || (user as any)?.id || deviceUserId;
   // Autocomplete while typing (debounced)
+  useEffect(() => {
+  if (!user?.userId) return;
+
+  async function loadMySubmissions() {
+    try {
+      const res = await fetch(
+        `${API_BASE}/impact/mine/${user}`,
+        { headers: { "ngrok-skip-browser-warning": "true" } }
+      );
+
+      const data = await res.json();
+      if (data.ok) {
+        setMySubmissions(data.submissions);
+      }
+    } catch (e) {
+      console.log("Failed to load submissions");
+    }
+  }
+
+  loadMySubmissions();
+}, [user]);
+  
   useEffect(() => {
     if (!pickOpen) return;
 
@@ -124,7 +147,16 @@ export default function ImpactScreen() {
     if (!res.ok) throw new Error(data?.error || "Autocomplete failed");
     return (data?.suggestions || []) as PlaceSuggestion[];
   }
+async function loadMySubmissions() {
+  const uid = submitUserId;
+  if (!uid) return;
 
+  const res = await fetch(`${API_BASE}/impact/mine/${uid}`, {
+    headers: { "ngrok-skip-browser-warning": "true" },
+  });
+  const data = await res.json();
+  if (data.ok) setMySubmissions(data.submissions || []);
+}
   async function fetchPlaceDetails(placeId: string): Promise<PlaceDetails> {
     const res = await fetch(`${API_BASE}/impact/place-details`, {
       method: "POST",
@@ -140,47 +172,51 @@ export default function ImpactScreen() {
     return data.place as PlaceDetails;
   }
 
-  async function submit() {
-    setStatusMsg("");
+ async function submit() {
+  setStatusMsg("");
 
-    if (!photo) return setStatusMsg("Pick a photo first.");
-    if (!chosen) return setStatusMsg("Pick a donation location.");
-    if (!userId) return setStatusMsg("Missing userId.");
+  
 
-    setSubmitting(true);
-    try {
-      const form = new FormData();
-      form.append("userId", userId);
-      form.append("walletAddress", wallet || "");
-      form.append("locationName", chosen.name);
-      form.append("locationLat", String(chosen.lat));
-      form.append("locationLng", String(chosen.lng));
-      form.append("placeId", chosen.placeId);
-      form.append("address", chosen.address);
+  if (!photo) return setStatusMsg("Pick a photo first.");
+  if (!chosen) return setStatusMsg("Pick a donation location.");
+  if (!submitUserId) return setStatusMsg("Missing userId.");
 
-      form.append("photo", {
-        uri: photo.uri,
-        name: photo.name,
-        type: photo.type,
-      } as any);
+  setSubmitting(true);
+  
+  try {
+    const form = new FormData();
 
-      await submitImpact(form);
+    form.append("userId", submitUserId);
+    form.append("walletAddress", wallet || "");
+    form.append("locationName", chosen.name);
+    form.append("locationLat", String(chosen.lat));
+    form.append("locationLng", String(chosen.lng));
 
-      setStatusMsg("Submitted for approval ✅");
-      await addPoints(10);
+    form.append("photo", {
+      uri: photo.uri,
+      name: photo.name,
+      type: photo.type,
+    } as any);
 
-      setPhoto(null);
-      setChosen(null);
-      setQuery("");
-      setResults([]);
-      setPickOpen(false);
-    } catch (e: any) {
-      setStatusMsg(e?.message || "Submit failed");
-    } finally {
-      setSubmitting(false);
-    }
+    await submitImpact(form);  // ← ONLY this call
+      loadMySubmissions();
+
+
+    setStatusMsg("Submitted for approval ✅");
+    await addPoints(10);
+
+    setPhoto(null);
+    setChosen(null);
+    setQuery("");
+    setResults([]);
+    setPickOpen(false);
+
+  } catch (e: any) {
+    setStatusMsg(e?.message || "Submit failed");
+  } finally {
+    setSubmitting(false);
   }
-
+}
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: "#FDECEF" }}
@@ -242,6 +278,42 @@ export default function ImpactScreen() {
           badge.
         </Text>
       </View>
+      <View style={styles.card}>
+  <Text style={styles.sectionTitle}>My submissions</Text>
+
+  <Pressable
+    onPress={async () => {
+      try {
+        const uid = (user as any)?.userId || (user as any)?.id || deviceUserId;
+        if (!uid) return;
+
+        const res = await fetch(`${API_BASE}/impact/mine/${uid}`, {
+          headers: { "ngrok-skip-browser-warning": "true" },
+        });
+        const data = await res.json();
+        if (data.ok) setMySubmissions(data.submissions || []);
+      } catch {}
+    }}
+    style={styles.secondaryBtn}
+  >
+    <Text style={styles.secondaryText}>Refresh</Text>
+  </Pressable>
+
+  {mySubmissions.length === 0 ? (
+    <Text style={styles.small}>No submissions yet.</Text>
+  ) : (
+    mySubmissions.map((s) => (
+      <View
+        key={s._id}
+        style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#F3D0DB" }}
+      >
+        <Text style={{ color: "#333" }}>{s.locationName}</Text>
+        <Text style={styles.small}>Status: {s.status}</Text>
+        {s.txMint ? <Text style={styles.small}>Mint tx: {String(s.txMint).slice(0, 18)}...</Text> : null}
+      </View>
+    ))
+  )}
+</View>
 
       <Modal
         visible={pickOpen}
@@ -319,6 +391,7 @@ export default function ImpactScreen() {
             </View>
           ) : null}
         </View>
+    
       </Modal>
     </ScrollView>
   );

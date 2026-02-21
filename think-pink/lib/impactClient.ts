@@ -39,6 +39,20 @@ export async function placesAutocomplete(params: {
   if (!res.ok) throw new Error(data?.error || "Autocomplete failed");
   return data as { ok: true; suggestions: PlaceSuggestion[] };
 }
+export async function uploadImpactPhoto(form: FormData) {
+  const res = await fetch(`${API_BASE}/impact/upload`, {
+    method: "POST",
+    headers: { "ngrok-skip-browser-warning": "true" },
+    body: form,
+  });
+
+  const text = await res.text();
+  let data: any;
+  try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
+  if (!res.ok) throw new Error(data?.error || "Upload failed");
+  return data as { ok: true; imageUrl: string };
+}
+
 
 export async function placeDetails(placeId: string) {
   const res = await fetch(`${API_BASE}/impact/place-details`, {
@@ -83,13 +97,9 @@ export async function submitImpact(form: FormData) {
 
   const text = await res.text();
   let data: any;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    throw new Error(text.slice(0, 120));
-  }
+  try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
   if (!res.ok) throw new Error(data?.error || "Submit failed");
-  return data;
+  return data as { ok: true; submission: any };
 }
 
 export async function approveImpact(submissionId: string) {
