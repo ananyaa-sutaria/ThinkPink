@@ -1,15 +1,17 @@
 import { useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ScrollView } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../lib/AuthContext";
+import { API_BASE } from "../lib/api";
 
 export default function SignUpScreen() {
   const router = useRouter();
   const { signIn } = useAuth();
-  
+
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [wallet, setWallet] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const handleSignUp = async () => {
     if (!username || !password) {
@@ -17,37 +19,50 @@ export default function SignUpScreen() {
       return;
     }
 
+    setLoading(true);
     try {
-      const response = await fetch("http://localhost:5000/api/users/signup", {
+      const response = await fetch(`${API_BASE}/api/users/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password, wallet }),
       });
 
-      const data = await response.json();
+      const contentType = response.headers.get("content-type") || "";
+      let data: any;
+
+      if (contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        console.warn("Server returned non-JSON:", text);
+        alert("Server returned unexpected response. Check backend URL!");
+        return;
+      }
 
       if (response.ok) {
         alert("Success! Account created. 🌸");
-        await signIn(data as any);
-        router.replace("/(tabs)" as any);
+        await signIn(data);
+        router.replace("/(tabs)");
       } else {
         alert(data.error || "Signup failed");
       }
     } catch (error) {
-      alert("Cannot reach server. Check your terminal!");
+      console.error(error);
+      alert("Cannot connect to server. Check your backend terminal or network!");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Create Account</Text>
-      
       <TextInput style={styles.input} placeholder="Username" value={username} onChangeText={setUsername} autoCapitalize="none" />
       <TextInput style={styles.input} placeholder="Solana Wallet (Optional)" value={wallet} onChangeText={setWallet} />
       <TextInput style={styles.input} placeholder="Password" secureTextEntry value={password} onChangeText={setPassword} />
 
-      <Pressable onPress={handleSignUp} style={styles.button}>
-        <Text style={styles.buttonText}>Join ThinkPink</Text>
+      <Pressable onPress={handleSignUp} style={styles.button} disabled={loading}>
+        {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Join ThinkPink</Text>}
       </Pressable>
 
       <Pressable onPress={() => router.back()} style={styles.linkButton}>

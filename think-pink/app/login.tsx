@@ -2,6 +2,7 @@ import { useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../lib/AuthContext";
+import { API_BASE } from "../lib/api";
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -18,26 +19,34 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
-      const response = await fetch("http://localhost:5000/api/users/signin", {
+      const response = await fetch(`${API_BASE}/api/users/signin`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          username: username.trim(), 
-          password: password.trim() 
-        }),
+        body: JSON.stringify({ username: username.trim(), password: password.trim() }),
       });
 
-      const data = await response.json();
+      const contentType = response.headers.get("content-type") || "";
+      let data: any;
+
+      if (contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        console.warn("Server returned non-JSON:", text);
+        alert("Server returned unexpected response. Check backend URL!");
+        return;
+      }
 
       if (response.ok) {
-    console.log("✅ Sign in successful");
-    await signIn(data as any); 
-    
-    // FORCE REDIRECT: Use the group name explicitly
-    router.replace("/(tabs)"); 
-  }
+        console.log("✅ Sign in successful");
+        await signIn(data);
+        router.replace("/(tabs)");
+      } else {
+        alert(data.error || "Sign in failed");
+      }
     } catch (error) {
-      alert("Cannot connect to server. Check your backend terminal!");
+      console.error(error);
+      alert("Cannot connect to server. Check your backend terminal or network!");
     } finally {
       setLoading(false);
     }

@@ -100,6 +100,55 @@ app.post("/api/users/signin", async (req, res) => {
   }
 });
 
+// server/index.js
+app.post("/api/users/change-password", async (req, res) => {
+  try {
+    const { userId, newPassword } = req.body;
+
+    if (!userId || !newPassword) {
+      return res.status(400).json({ error: "userId and newPassword are required" });
+    }
+
+    const updated = await User.findOneAndUpdate(
+      { userId },
+      { $set: { password: newPassword } },
+      { new: true }
+    );
+
+    if (!updated) return res.status(404).json({ error: "User not found" });
+
+    res.json({ ok: true, message: "Password updated successfully" });
+  } catch (err) {
+    console.error("Change password error:", err);
+    res.status(500).json({ error: "Failed to update password" });
+  }
+});
+
+app.post("/api/users/sync", async (req, res) => {
+  try {
+    const { userId, name, wallet, password } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required" });
+    }
+
+    const updatedUser = await User.findOneAndUpdate(
+      { userId },
+      { $set: { name, wallet, password } },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json(updatedUser);
+  } catch (err) {
+    console.error("SYNC ERROR:", err);
+    res.status(500).json({ error: "Failed to sync user" });
+  }
+});
+
 // --------------------
 // Solana Routes
 // --------------------
@@ -197,21 +246,128 @@ ${message}
     res.status(500).json({ error: String(e?.message || e) });
   }
 });
+// server/index.js (replace your /ai/quiz route with this)
+
 app.post("/ai/quiz", async (req, res) => {
+  const { topic = "Cycle Phases 101", level = "beginner", numQuestions = 5 } = req.body || {};
+
+  // fallback quiz (always valid JSON)
+  const fallbackQuiz = {
+    topic,
+    level,
+    questions: [
+      {
+        id: "q1",
+        question: "Which phase is typically right before menstruation starts?",
+        choices: {
+          A: "Follicular",
+          B: "Ovulatory",
+          C: "Luteal",
+          D: "Menstrual",
+        },
+        answer: "C",
+        explanation: "The luteal phase occurs after ovulation and ends when menstruation begins.",
+      },
+      {
+        id: "q2",
+        question: "Ovulation usually happens around the middle of a typical cycle. What is released?",
+        choices: {
+          A: "A follicle",
+          B: "An egg",
+          C: "Progesterone",
+          D: "Menstrual blood",
+        },
+        answer: "B",
+        explanation: "Ovulation is when an ovary releases an egg.",
+      },
+      {
+        id: "q3",
+        question: "Which is a common, non-diagnostic sign that may happen in the luteal phase?",
+        choices: {
+          A: "Higher energy for everyone",
+          B: "Cravings or bloating for some people",
+          C: "Guaranteed weight loss",
+          D: "Always no symptoms",
+        },
+        answer: "B",
+        explanation: "Some people experience cravings, bloating, or mood changes in the luteal phase.",
+      },
+      {
+        id: "q4",
+        question: "A balanced snack for steady energy often includes:",
+        choices: {
+          A: "Only candy",
+          B: "Only water",
+          C: "Protein + fiber (like yogurt + berries)",
+          D: "Only soda",
+        },
+        answer: "C",
+        explanation: "Protein and fiber can help steady energy and keep you fuller longer.",
+      },
+      {
+        id: "q5",
+        question: "Which statement is most accurate?",
+        choices: {
+          A: "Everyone has the same cycle length",
+          B: "Cycles can vary and tracking helps you learn patterns",
+          C: "Symptoms always mean something is wrong",
+          D: "Cycle phases are not real",
+        },
+        answer: "B",
+        explanation: "Cycles vary person to person; tracking helps spot your own patterns.",
+      },
+    ].slice(0, Number(numQuestions) || 5),
+  };
+
   try {
-    const { topic = "Cycle Phases", level = "beginner", numQuestions = 5 } = req.body;
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    const prompt = `Return ONLY valid JSON with this schema: {"questions": [{"question": string, "choices": {"A": string, "B": string, "C": string, "D": string}, "answer": "A", "explanation": string}]}. Topic: ${topic}, Level: ${level}, Count: ${numQuestions}`;
-    
+    if (!process.env.GEMINI_API_KEY) {
+      return res.json({ ...fallbackQuiz, note: "Gemini key missing, using fallback quiz." });
+    }
+
+    const model = genAI.getGenerativeModel({ model: "gemini-3-pro-preview" });
+
+    const prompt = `
+You are an educational quiz writer for menstrual health literacy.
+Avoid medical diagnosis. Keep content factual, supportive, and appropriate for ${level} level.
+
+Topic: ${topic}
+Number of questions: ${numQuestions}
+
+Return ONLY valid JSON with this exact schema:
+{
+  "topic": string,
+  "level": string,
+  "questions": [
+    {
+      "id": string,
+      "question": string,
+      "choices": { "A": string, "B": string, "C": string, "D": string },
+      "answer": "A" | "B" | "C" | "D",
+      "explanation": string
+    }
+  ]
+}
+Rules:
+- Exactly ${numQuestions} questions
+- Explanations must be 1 sentence
+`;
+
     const result = await model.generateContent(prompt);
     const text = result.response.text();
+
     const match = text.match(/\{[\s\S]*\}/);
-    res.json(JSON.parse(match[0]));
+    if (!match) return res.json({ ...fallbackQuiz, note: "Model did not return JSON, using fallback quiz." });
+
+    const quiz = JSON.parse(match[0]);
+    if (!quiz?.questions?.length) return res.json({ ...fallbackQuiz, note: "Invalid model quiz, using fallback quiz." });
+
+    return res.json(quiz);
   } catch (err) {
-    res.status(500).json({ error: "AI Quiz failed" });
+    console.log("QUIZ ERROR:", err?.message || err);
+    // If Gemini key is blocked/leaked, you still get a working quiz
+    return res.json({ ...fallbackQuiz, note: "Gemini failed, using fallback quiz." });
   }
 });
-
 app.post("/ai/daily-insight", async (req, res) => {
   try {
     const { phase, symptoms, mood, energy } = req.body;

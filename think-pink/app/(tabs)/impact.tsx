@@ -239,6 +239,7 @@ async function onSubmitDonation() {
   );
 }
 
+
 /**
  * IMPORTANT:
  * - No top-level import from react-native-maps anywhere.
@@ -286,6 +287,7 @@ function NativeMap({ coords, centers }: { coords: Coords; centers: any[] }) {
   );
 }
 
+
 const styles = StyleSheet.create({
   mapContainer: {
     height: 220,
@@ -312,3 +314,5 @@ const styles = StyleSheet.create({
   },
   primaryText: { color: "#FFF", fontWeight: "700" },
 });
+
+
