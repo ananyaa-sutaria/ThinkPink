@@ -10,21 +10,22 @@ import { useRouter } from "expo-router";
 type Coords = { latitude: number; longitude: number };
 
 export default function ImpactScreen() {
+  const [centers, setCenters] = useState<any[]>([]);
   const { points } = useProgress();
   const [coords, setCoords] = useState<Coords | null>(null);
   const [permDenied, setPermDenied] = useState(false);
 
   const isWeb = Platform.OS === "web";
   const [open, setOpen] = useState(false);
-const [imageUri, setImageUri] = useState<string | null>(null);
+  const [imageUri, setImageUri] = useState<string | null>(null);
 
-const [query, setQuery] = useState("");
-const [suggestions, setSuggestions] = useState<any[]>([]);
-const [selectedPlace, setSelectedPlace] = useState<any | null>(null);
-const router = useRouter();
-const [submitting, setSubmitting] = useState(false);
-const [statusMsg, setStatusMsg] = useState("");
-async function pickImage() {
+  const [query, setQuery] = useState("");
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [selectedPlace, setSelectedPlace] = useState<any | null>(null);
+  const router = useRouter();
+  const [submitting, setSubmitting] = useState(false);
+  const [statusMsg, setStatusMsg] = useState("");
+  async function pickImage() {
   setStatusMsg("");
   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!perm.granted) {
@@ -103,6 +104,15 @@ async function onSubmitDonation() {
     })();
   }, []);
 
+  // const [centers, setCenters] = useState<any[]>([]);
+
+  useEffect(() => {
+  fetch("http://10.136.132.82:5000/locations")
+    .then((res) => res.json())
+    .then((data) => {console.log("CENTERS:", data); setCenters(data);})
+    .catch((err) => console.log("Fetch error:", err));
+  }, []);
+
   return (
     <><View style={{ flex: 1, backgroundColor: "#FDECEF", padding: 16, gap: 12 }}>
           <View style={{ backgroundColor: "#FFF", borderRadius: 20, padding: 16 }}>
@@ -126,7 +136,7 @@ async function onSubmitDonation() {
                       </Text>
                   </View>
               ) : (
-                  <NativeMap coords={coords} />
+                  <NativeMap coords={coords} centers={centers} />
               )}
 
               <Pressable onPress={() => setOpen(true)} style={styles.primaryBtn}>
@@ -235,7 +245,7 @@ async function onSubmitDonation() {
  * - Only require it at runtime AND only on native.
  */
 
-function NativeMap({ coords }: { coords: Coords }) {
+function NativeMap({ coords, centers }: { coords: Coords; centers: any[] }) {
   const MapStuff = useMemo(() => {
     // require only runs on native because this component never renders on web
     const maps = require("react-native-maps");
@@ -257,9 +267,21 @@ function NativeMap({ coords }: { coords: Coords }) {
 
   return (
     <View style={styles.mapContainer}>
+      {region && (
       <MapView style={styles.map} region={region} showsUserLocation>
-        <Marker coordinate={{ latitude: coords.latitude, longitude: coords.longitude }} title="You" />
+        {centers.map((center) => (
+        <Marker
+          key={center._id}
+          coordinate={{
+            latitude: center.coordinates.latitude,
+            longitude: center.coordinates.longitude,
+          }}
+          title={center.name}
+          description={center.description}
+        />
+      ))}
       </MapView>
+      )}
     </View>
   );
 }

@@ -12,6 +12,8 @@ import CycleLog from "./models/CycleLog.js";
 import BadgeMint from "./models/BadgeMint.js";
 import { createPointsMintOnce, awardPointsToWallet } from "./solanaPoints.js";
 import DonationSubmission from "./models/donationSubmission.js";
+// const Location = require("./models/Location");
+import Location from "./models/Location.js";
 
 dotenv.config();
 const app = express();
@@ -357,4 +359,17 @@ connectMongo().then(() => {
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on http://0.0.0.0:${PORT}`);
 });
+});
+
+
+// -------------------------------
+// Connecting locations from Mongo
+// -------------------------------
+app.get("/locations", async (req, res) => {
+  try {
+    const locations = await Location.find();
+    res.json(locations);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch locations" });
+  }
 });
