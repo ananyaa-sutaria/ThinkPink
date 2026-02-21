@@ -508,6 +508,21 @@ app.post("/impact/submit-donation", async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
+// -------------------------------
+// CONNECT LOCATIONS (Mongo)
+// -------------------------------
+// ✅ PLACE THIS AFTER connectMongo() AND BEFORE app.listen()
+app.get("/locations", async (req, res) => {
+  try {
+    const locations = await Location.find().lean(); // lean() ensures plain JSON
+    res.json(locations);
+  } catch (err) {
+    console.error("Failed to fetch locations:", err);
+    res.status(500).json({ error: "Failed to fetch locations" });
+  }
+});
+
 // --------------------
 // Start
 // --------------------
