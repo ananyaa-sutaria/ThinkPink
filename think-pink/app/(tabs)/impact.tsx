@@ -1,9 +1,9 @@
 import React from "react";
-import { View, Text, Pressable } from "react-native";
+// import { View, Text, Pressable } from "react-native";
 import { useProgress } from "../../lib/progressContext";
 
-export default function ImpactScreen() {
-  const { points } = useProgress();
+// export default function ImpactScreen() {
+  // const { points } = useProgress();
 
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import MapView, { Marker } from "react-native-maps";
@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 
 
 export default function ImpactScreen() {
+  const { points } = useProgress();
   const [region, setRegion] = useState<any>(null);
   useEffect(() => {
     (async () => {
@@ -51,7 +52,6 @@ export default function ImpactScreen() {
         <Text style={{ color: "#FFF", fontWeight: "700" }}>Find donation centers</Text>
       </Pressable>
         {/* <Text style={{ color: "#555" }}>Your points: {points}</Text> */}
-      </View>
 
       <View style={{ backgroundColor: "#FFF", borderRadius: 20, padding: 16, gap: 10 }}>
         <Text style={{ color: "#333", fontWeight: "800" }}>Map</Text>
