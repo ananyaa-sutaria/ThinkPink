@@ -44,6 +44,72 @@ app.use(makeDaoRouter({ connection }));
 // --------------------
 // Config & Constants
 
+const CHAT_SYMPTOM_RULES = [
+  { label: "Nausea", patterns: [/\bnausea\b/i, /\bnauseous\b/i, /\bqueasy\b/i] },
+  { label: "Acne", patterns: [/\bacne\b/i, /\bpimple(s)?\b/i, /\bbreakout(s)?\b/i] },
+  { label: "Bloating", patterns: [/\bbloat(ing|ed)?\b/i, /\bbloated\b/i] },
+  {
+    label: "Stomach pain",
+    patterns: [/\bstomach pain\b/i, /\babdominal pain\b/i, /\bcramp(s|ing)?\b/i, /\bbelly pain\b/i],
+  },
+  { label: "Hot flash", patterns: [/\bhot flash(es)?\b/i, /\boverheat(ing)?\b/i, /\btoo hot\b/i] },
+];
+
+function extractChatSymptomsAndNotes(message) {
+  const text = String(message || "").trim();
+  if (!text) return { matchedSymptoms: [], shouldAddToNotes: false };
+
+  const matched = new Set();
+  for (const rule of CHAT_SYMPTOM_RULES) {
+    if (rule.patterns.some((rx) => rx.test(text))) matched.add(rule.label);
+  }
+
+  const looksLikeFeelingMessage =
+    /\b(i feel|i'm feeling|im feeling|i have|i'm having|im having|symptom|symptoms|pain|cramps?|nausea|bloating|acne|hot flash)\b/i.test(
+      text
+    );
+
+  return {
+    matchedSymptoms: Array.from(matched),
+    shouldAddToNotes: matched.size === 0 && looksLikeFeelingMessage,
+  };
+}
+
+async function persistChatSignalToTodayLog({ userId, dateISO, message }) {
+  if (!userId || !dateISO || !message) return;
+
+  const { matchedSymptoms, shouldAddToNotes } = extractChatSymptomsAndNotes(message);
+  if (matchedSymptoms.length === 0 && !shouldAddToNotes) return;
+
+  const existing = await CycleLog.findOne({ userId, dateISO });
+  const noteLine = `Chat note: ${String(message).trim()}`;
+
+  if (!existing) {
+    await CycleLog.create({
+      userId,
+      dateISO,
+      symptoms: matchedSymptoms,
+      notes: shouldAddToNotes ? noteLine : undefined,
+    });
+    return;
+  }
+
+  const nextSymptoms = Array.isArray(existing.symptoms) ? [...existing.symptoms] : [];
+  for (const s of matchedSymptoms) {
+    if (!nextSymptoms.includes(s)) nextSymptoms.push(s);
+  }
+  existing.symptoms = nextSymptoms;
+
+  if (shouldAddToNotes) {
+    const prevNotes = String(existing.notes || "");
+    if (!prevNotes.includes(noteLine)) {
+      existing.notes = prevNotes ? `${prevNotes}\n${noteLine}` : noteLine;
+    }
+  }
+
+  await existing.save();
+}
+
 
 // --------------------
 // Mongo Setup
@@ -218,6 +284,19 @@ const enrichedSnapshot = {
   recentLogs,
   lastPeriodStartISO,
 };
+
+    // Write symptom signal from chat into today's cycle log.
+    // - known symptom words -> add to symptoms list
+    // - feeling text that is not a known symptom -> append to notes
+    try {
+      await persistChatSignalToTodayLog({
+        userId,
+        dateISO: snapshot?.todayISO || new Date().toISOString().slice(0, 10),
+        message,
+      });
+    } catch (logSignalErr) {
+      console.error("CYCLE CHAT LOG SIGNAL ERROR:", logSignalErr);
+    }
 
     // Hard-answer last period if asked (fast + reliable)
     const lower = String(message).toLowerCase();

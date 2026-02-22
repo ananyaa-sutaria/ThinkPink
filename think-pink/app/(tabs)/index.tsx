@@ -29,7 +29,7 @@ type CycleLog = {
   periodStart?: boolean;
   periodEnd?: boolean;
   spotting?: boolean;
-  symptoms?: string;
+  symptoms?: string | string[];
   notes?: string;
 };
 
@@ -225,11 +225,24 @@ function deriveCycleForDate(dateISO: string, logs: Record<string, CycleLog>, per
 }
 
 function countConsecutiveLoggedDays(logs: Record<string, CycleLog>, endDateISO: string) {
+  function hasStreakSignal(log?: CycleLog) {
+    if (!log) return false;
+    const symptomCount = Array.isArray(log.symptoms)
+      ? log.symptoms.length
+      : typeof log.symptoms === "string"
+      ? log.symptoms
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean).length
+      : 0;
+    return !!(log.periodStart || log.periodEnd || log.spotting || symptomCount > 0);
+  }
+
   let streak = 0;
   let cursor = endDateISO;
   let safety = 0;
 
-  while (logs[cursor] && safety < 400) {
+  while (hasStreakSignal(logs[cursor]) && safety < 400) {
     streak += 1;
     cursor = addDaysISO(cursor, -1);
     safety += 1;
@@ -419,13 +432,14 @@ export default function Home() {
     setPeriodStart(!!l?.periodStart);
     setPeriodEnd(!!l?.periodEnd);
     setSpotting(!!l?.spotting);
-    const parsedSymptoms =
-      typeof l?.symptoms === "string"
-        ? l.symptoms
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean)
-        : [];
+    const parsedSymptoms = Array.isArray(l?.symptoms)
+      ? l.symptoms.map((s) => String(s).trim()).filter(Boolean)
+      : typeof l?.symptoms === "string"
+      ? l.symptoms
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
     setSelectedSymptoms(parsedSymptoms);
     setNotes(l?.notes || "");
   }, [selectedDate, logsByDate]);
@@ -496,7 +510,7 @@ export default function Home() {
         periodStart,
         periodEnd,
         spotting,
-        symptoms: selectedSymptoms.length ? selectedSymptoms.join(", ") : undefined,
+        symptoms: selectedSymptoms.length ? selectedSymptoms : undefined,
         notes: notes.trim() || undefined,
       };
       const nextLogs = { ...logsByDate, [selectedDate]: { ...logsByDate[selectedDate], ...draft } };
@@ -525,14 +539,29 @@ export default function Home() {
       const mergedLogs = { ...logsByDate, [saved.dateISO]: { ...payload, ...saved } };
       setLogsByDate(mergedLogs);
 
-      const streak = countConsecutiveLoggedDays(mergedLogs, saved.dateISO);
-      if (streak === STREAK_DAYS_TARGET) {
-        const rewardKey = streakRewardKey(userId, saved.dateISO, STREAK_DAYS_TARGET);
-        const alreadyAwarded = await getItem(rewardKey);
-        if (!alreadyAwarded) {
-          await addPoints(STREAK_BONUS_POINTS);
-          await setItem(rewardKey, "1");
-          setStreakNotice(`Streak bonus earned: +${STREAK_BONUS_POINTS} points`);
+      const qualifiesForStreak =
+        !!saved.periodStart ||
+        !!saved.periodEnd ||
+        !!saved.spotting ||
+        (Array.isArray(saved.symptoms)
+          ? saved.symptoms.length > 0
+          : typeof saved.symptoms === "string"
+          ? saved.symptoms
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean).length > 0
+          : false);
+
+      if (qualifiesForStreak) {
+        const streak = countConsecutiveLoggedDays(mergedLogs, saved.dateISO);
+        if (streak === STREAK_DAYS_TARGET) {
+          const rewardKey = streakRewardKey(userId, saved.dateISO, STREAK_DAYS_TARGET);
+          const alreadyAwarded = await getItem(rewardKey);
+          if (!alreadyAwarded) {
+            await addPoints(STREAK_BONUS_POINTS);
+            await setItem(rewardKey, "1");
+            setStreakNotice(`Streak bonus earned: +${STREAK_BONUS_POINTS} points`);
+          }
         }
       }
 
