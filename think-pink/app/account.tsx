@@ -255,7 +255,7 @@ export default function AccountScreen() {
             style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
           >
             <Text style={styles.label}>Solana Wallet</Text>
-            <Text style={{ color: "#D81B60", fontSize: 12, fontWeight: "700" }}>
+            <Text style={{ color: "#BA5D84", fontSize: 12, fontWeight: "700" }}>
               {walletOpen ? "Hide" : "Show"}
             </Text>
           </Pressable>
@@ -273,7 +273,7 @@ export default function AccountScreen() {
               />
 
               <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
-                <Pressable onPress={onSaveLocal} style={[styles.smallBtn, { backgroundColor: "#D81B60" }]}>
+                <Pressable onPress={onSaveLocal} style={[styles.smallBtn, { backgroundColor: "#BA5D84" }]}>
                   <Text style={[styles.smallBtnText, { color: "#FFF" }]}>Save</Text>
                 </Pressable>
               </View>
@@ -284,7 +284,7 @@ export default function AccountScreen() {
         </View>
 
         <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={16} color="#D81B60" />
+          <Ionicons name="arrow-back" size={16} color="#BA5D84" />
           <Text style={styles.backText}>Back</Text>
         </Pressable>
 
@@ -343,7 +343,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#FFF" },
   content: { padding: 20, paddingTop: 36, alignItems: "center", paddingBottom: 40 },
   wrap: { width: "100%", maxWidth: 520, alignItems: "center" },
-  header: { fontSize: 24, fontWeight: "900", color: "#D81B60", marginBottom: 16, textAlign: "center" },
+  header: { fontSize: 24, fontWeight: "900", color: "#BA5D84", marginBottom: 16, textAlign: "center" },
   profileWrap: { alignItems: "center", marginBottom: 14, gap: 8 },
   avatarCircle: {
     width: 104,
@@ -354,7 +354,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#D81B60",
+    borderColor: "#BA5D84",
   },
   avatarImage: { width: "100%", height: "100%" },
   avatarInitials: { color: "#FFF", fontWeight: "900", fontSize: 34 },
@@ -413,7 +413,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#F48FB1",
   },
-  securityBtnText: { color: "#D81B60", fontFamily: "Onest-Bold", fontSize: 16 },
+  securityBtnText: { color: "#BA5D84", fontFamily: "Onest-Bold", fontSize: 16 },
 
   card: {
     backgroundColor: "#FFF",
@@ -451,7 +451,7 @@ const styles = StyleSheet.create({
   smallBtnText: { fontWeight: "700" },
 
   signOutButton: { marginTop: 10, padding: 10, alignItems: "center" },
-  signOutText: { color: "#D81B60", fontWeight: "800", fontSize: 16 },
+  signOutText: { color: "#BA5D84", fontWeight: "800", fontSize: 16 },
 
   backButton: {
     flexDirection: "row",
@@ -460,7 +460,7 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 10,
   },
-  backText: { color: "#D81B60", fontWeight: "800" },
+  backText: { color: "#BA5D84", fontWeight: "800" },
   securityOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.32)",
@@ -482,6 +482,6 @@ const styles = StyleSheet.create({
   securityAction: { flex: 1, borderRadius: 10, paddingVertical: 11, alignItems: "center" },
   securityCancel: { backgroundColor: "#FDECEF", borderWidth: 1, borderColor: "#F48FB1" },
   securitySave: { backgroundColor: "#BA5D84" },
-  securityCancelText: { color: "#D81B60", fontFamily: "Onest-Bold" },
+  securityCancelText: { color: "#BA5D84", fontFamily: "Onest-Bold" },
   securitySaveText: { color: "#FFF", fontFamily: "Onest-Bold" },
 });
