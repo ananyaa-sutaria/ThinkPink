@@ -33,7 +33,7 @@ app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 app.get("/", (req, res) => res.send("OK"));
 // --------------------
-const PORT = process.env.PORT || 5000;
+const PORT = Number(process.env.PORT || 5000);
 const CLUSTER = process.env.SOLANA_CLUSTER || "devnet";
 const serverWallet = loadServerKeypair();
 
@@ -1071,8 +1071,22 @@ app.get("/locations", async (req, res) => {
 // --------------------
 // Start
 // --------------------
-connectMongo().then(() => {
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
+function startServer(preferredPort, host = "0.0.0.0") {
+  const server = app.listen(preferredPort, host, () => {
+    console.log(`Server running on http://${host}:${preferredPort}`);
   });
+
+  server.on("error", (err) => {
+    if (err?.code === "EADDRINUSE") {
+      const nextPort = Number(preferredPort) + 1;
+      console.warn(`Port ${preferredPort} is in use, retrying on ${nextPort}...`);
+      startServer(nextPort, host);
+      return;
+    }
+    throw err;
+  });
+}
+
+connectMongo().then(() => {
+  startServer(PORT);
 });

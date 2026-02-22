@@ -2,11 +2,24 @@ const { getDefaultConfig } = require("expo/metro-config");
 
 const config = getDefaultConfig(__dirname);
 
-config.resolver.assetExts.push("svg");
-config.resolver.sourceExts.push("svg");
+let svgTransformerPath = null;
+try {
+  svgTransformerPath = require.resolve("react-native-svg-transformer");
+} catch {
+  // Keep Metro bootable even if the transformer package is temporarily missing.
+}
 
-config.transformer.babelTransformerPath = require.resolve(
-  "react-native-svg-transformer"
-);
+if (svgTransformerPath) {
+  config.transformer = {
+    ...config.transformer,
+    babelTransformerPath: svgTransformerPath,
+  };
+
+  config.resolver = {
+    ...config.resolver,
+    assetExts: config.resolver.assetExts.filter((ext) => ext !== "svg"),
+    sourceExts: [...config.resolver.sourceExts, "svg"],
+  };
+}
 
 module.exports = config;
