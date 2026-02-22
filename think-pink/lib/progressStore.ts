@@ -8,6 +8,7 @@ const KEY_IMPACT_UNLOCKED = "tp_impact_badge_unlocked";
 const KEY_IMPACT_MINTED = "tp_impact_badge_minted";
 
 const KEY_POINTS = "tp_points";
+const KEY_LIFETIME_POINTS = "tp_lifetime_points";
 
 async function getBool(key: string) {
   const v = await AsyncStorage.getItem(key);
@@ -57,4 +58,10 @@ export async function getPoints() {
 }
 export async function setPoints(n: number) {
   return setInt(KEY_POINTS, n);
+}
+export async function getLifetimePoints() {
+  return getInt(KEY_LIFETIME_POINTS);
+}
+export async function setLifetimePoints(n: number) {
+  return setInt(KEY_LIFETIME_POINTS, n);
 }

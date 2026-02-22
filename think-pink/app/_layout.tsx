@@ -9,7 +9,7 @@ export default function RootLayout() {
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="login" options={{ presentation: 'modal', title: "Login" }} />
-          <Stack.Screen name="account" options={{ title: "Account Settings" }} />
+          <Stack.Screen name="account" options={{ headerShown: false }} />
         </Stack>
       </ProgressProvider>
     </AuthProvider>

@@ -71,7 +71,7 @@ export default function TabsLayout() {
                 iconSource = require("../../components/icons/family-home-outline-rounded.png");
                 break;
               case "log":
-                iconSource = require("../../components/icons/bedtime-rounded.png");
+                iconSource = require("../../components/icons/Vector.png");
                 break;
               case "badges":
                 iconSource = require("../../components/icons/award-star-rounded.png");
@@ -86,7 +86,7 @@ export default function TabsLayout() {
         <Tabs.Screen name="learn" options={{ title: "Learn" }} />
         <Tabs.Screen name="impact" options={{ title: "Impact" }} />
         <Tabs.Screen name="index" options={{ title: "Home" }} />
-        <Tabs.Screen name="log" options={{ title: "Log" }} />
+        <Tabs.Screen name="log" options={{ title: "Flow" }} />
         <Tabs.Screen name="badges" options={{ title: "Badges" }} />
       </Tabs>
     </View>

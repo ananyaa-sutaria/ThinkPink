@@ -32,12 +32,12 @@ export default function ImpactScreen() {
 
   const [photo, setPhoto] = useState<{ uri: string; name: string; type: string } | null>(null);
 
-  const [pickOpen, setPickOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PlaceSuggestion[]>([]);
   const [chosen, setChosen] = useState<PlaceDetails | null>(null);
   const [loadingGeo, setLoadingGeo] = useState(false);
   const [mySubmissions, setMySubmissions] = useState<any[]>([]);
+  const [submissionsOpen, setSubmissionsOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
   const [donateOpen, setDonateOpen] = useState(false);
@@ -98,8 +98,7 @@ export default function ImpactScreen() {
   }, [submitUserId]);
 
   useEffect(() => {
-    if (!pickOpen) return;
-
+    if (!donateOpen) return;
     const q = query.trim();
     if (q.length < 2) {
       setResults([]);
@@ -121,7 +120,7 @@ export default function ImpactScreen() {
 
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, pickOpen, coords?.lat, coords?.lng]);
+  }, [query, donateOpen, coords?.lat, coords?.lng]);
 
   async function pickPhoto() {
     setStatusMsg("");
@@ -209,7 +208,6 @@ export default function ImpactScreen() {
       setChosen(null);
       setQuery("");
       setResults([]);
-      setPickOpen(false);
     } catch (e: any) {
       setStatusMsg(e?.message || "Submit failed");
     } finally {
@@ -242,15 +240,16 @@ export default function ImpactScreen() {
         ) : (
           <NativeMap coords={coords} centers={centers} />
         )}
+
       </View>
 
-      <Pressable onPress={() => setDonateOpen(true)} style={styles.logDonationBtn}>
-        <Text style={styles.logDonationText}>Log a Donation</Text>
+      <Pressable onPress={() => setDonateOpen(true)} style={[styles.primaryBtn, styles.mainCta]}>
+        <Text style={styles.primaryText}>Log a Donation</Text>
       </Pressable>
 
       <Modal visible={donateOpen} animationType="slide" onRequestClose={() => setDonateOpen(false)}>
-        <View style={{ flex: 1, backgroundColor: "#FDECEF", padding: 16 }}>
-          <ScrollView contentContainerStyle={{ gap: 12, paddingBottom: 30 }}>
+        <View style={{ flex: 1, backgroundColor: "#FDECEF", padding: 16, justifyContent: "center" }}>
+          <ScrollView style={{ maxHeight: "86%" }} contentContainerStyle={{ gap: 12, paddingBottom: 10 }}>
             <View style={styles.card}>
               <Text style={styles.title}>Impact</Text>
               <Text style={styles.sub}>Your points: {points}</Text>
@@ -269,21 +268,57 @@ export default function ImpactScreen() {
 
             <View style={styles.card}>
               <Text style={styles.sectionTitle}>2) Donation location</Text>
-              <Pressable
-                onPress={() => {
+
+              <TextInput
+                value={query}
+                onChangeText={(t) => {
                   setStatusMsg("");
-                  setPickOpen(true);
+                  setQuery(t);
                 }}
-                style={styles.secondaryBtn}
-              >
-                <Text style={styles.secondaryText}>{chosen ? "Change location" : "Search + choose location"}</Text>
-              </Pressable>
+                placeholder="Search + choose location"
+                style={styles.input}
+                autoCorrect={false}
+                autoCapitalize="none"
+              />
+
+              {loadingGeo ? <Text style={styles.small}>Searching…</Text> : null}
 
               {chosen ? (
                 <Text style={styles.small}>
                   Chosen: {chosen.name} ({chosen.address})
                 </Text>
               ) : null}
+
+              {query.trim().length < 2 ? (
+                <Text style={styles.small}>Type at least 2 characters.</Text>
+              ) : results.length === 0 && !loadingGeo ? (
+                <Text style={styles.small}>No matches yet.</Text>
+              ) : (
+                results.map((r, idx) => (
+                  <Pressable
+                    key={r.placeId || String(idx)}
+                    onPress={async () => {
+                      try {
+                        setStatusMsg("");
+                        setLoadingGeo(true);
+                        const place = await fetchPlaceDetails(r.placeId);
+                        setChosen(place);
+                        setQuery(place.address || place.name || "");
+                        setResults([]);
+                      } catch (e: any) {
+                        setStatusMsg(e?.message || "Could not load place details");
+                      } finally {
+                        setLoadingGeo(false);
+                      }
+                    }}
+                    style={styles.resultRow}
+                  >
+                    <Text style={{ color: "#333" }} numberOfLines={2}>
+                      {r.description}
+                    </Text>
+                  </Pressable>
+                ))
+              )}
             </View>
 
             <View style={styles.card}>
@@ -301,23 +336,33 @@ export default function ImpactScreen() {
             </View>
 
             <View style={styles.card}>
-              <Text style={styles.sectionTitle}>My submissions</Text>
-
-              <Pressable onPress={loadMySubmissions} style={styles.secondaryBtn}>
-                <Text style={styles.secondaryText}>Refresh</Text>
+              <Pressable
+                onPress={() => setSubmissionsOpen((v) => !v)}
+                style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
+              >
+                <Text style={styles.sectionTitle}>My submissions</Text>
+                <Text style={{ color: "#D81B60", fontWeight: "700" }}>{submissionsOpen ? "Hide" : "Show"}</Text>
               </Pressable>
 
-              {mySubmissions.length === 0 ? (
-                <Text style={styles.small}>No submissions yet.</Text>
-              ) : (
-                mySubmissions.map((s) => (
-                  <View key={s._id} style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#F3D0DB" }}>
-                    <Text style={{ color: "#333" }}>{s.locationName}</Text>
-                    <Text style={styles.small}>Status: {s.status}</Text>
-                    {s.txMint ? <Text style={styles.small}>Mint tx: {String(s.txMint).slice(0, 18)}...</Text> : null}
-                  </View>
-                ))
-              )}
+              {submissionsOpen ? (
+                <>
+                  <Pressable onPress={loadMySubmissions} style={styles.secondaryBtn}>
+                    <Text style={styles.secondaryText}>Refresh</Text>
+                  </Pressable>
+
+                  {mySubmissions.length === 0 ? (
+                    <Text style={styles.small}>No submissions yet.</Text>
+                  ) : (
+                    mySubmissions.map((s) => (
+                      <View key={s._id} style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#F3D0DB" }}>
+                        <Text style={{ color: "#333" }}>{s.locationName}</Text>
+                        <Text style={styles.small}>Status: {s.status}</Text>
+                        {s.txMint ? <Text style={styles.small}>Mint tx: {String(s.txMint).slice(0, 18)}...</Text> : null}
+                      </View>
+                    ))
+                  )}
+                </>
+              ) : null}
             </View>
 
             <Pressable onPress={() => setDonateOpen(false)} style={styles.backBtn}>
@@ -327,79 +372,6 @@ export default function ImpactScreen() {
         </View>
       </Modal>
 
-      <Modal visible={pickOpen} animationType="slide" onRequestClose={() => setPickOpen(false)}>
-        <View style={{ flex: 1, backgroundColor: "#FDECEF", padding: 16, gap: 12 }}>
-          <View style={styles.card}>
-            <Text style={styles.title}>Search location</Text>
-            <Text style={styles.small}>Type a place name, shelter, school, or city.</Text>
-
-            <TextInput
-              value={query}
-              onChangeText={(t) => {
-                setStatusMsg("");
-                setQuery(t);
-              }}
-              placeholder="e.g., Reitz Union"
-              style={styles.input}
-              autoCorrect={false}
-              autoCapitalize="none"
-            />
-
-            {loadingGeo ? <Text style={styles.small}>Searching…</Text> : null}
-
-            <Pressable
-              onPress={() => {
-                setPickOpen(false);
-                setQuery("");
-                setResults([]);
-              }}
-              style={styles.backBtn}
-            >
-              <Text style={{ color: "#D81B60" }}>Back</Text>
-            </Pressable>
-          </View>
-
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Results</Text>
-
-            {query.trim().length < 2 ? (
-              <Text style={styles.small}>Type at least 2 characters.</Text>
-            ) : results.length === 0 && !loadingGeo ? (
-              <Text style={styles.small}>No matches yet.</Text>
-            ) : (
-              results.map((r, idx) => (
-                <Pressable
-                  key={r.placeId || String(idx)}
-                  onPress={async () => {
-                    try {
-                      setStatusMsg("");
-                      setLoadingGeo(true);
-                      const place = await fetchPlaceDetails(r.placeId);
-                      setChosen(place);
-                      setPickOpen(false);
-                    } catch (e: any) {
-                      setStatusMsg(e?.message || "Could not load place details");
-                    } finally {
-                      setLoadingGeo(false);
-                    }
-                  }}
-                  style={styles.resultRow}
-                >
-                  <Text style={{ color: "#333" }} numberOfLines={2}>
-                    {r.description}
-                  </Text>
-                </Pressable>
-              ))
-            )}
-          </View>
-
-          {statusMsg ? (
-            <View style={[styles.card, { padding: 12 }]}>
-              <Text style={{ color: "#C62828" }}>{statusMsg}</Text>
-            </View>
-          ) : null}
-        </View>
-      </Modal>
     </ScrollView>
   );
 }
@@ -420,12 +392,11 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, color: "#333", fontWeight: "800" },
   sub: { color: "#555" },
   hint: { color: "#555" },
-  mapTitle: { color: "#2D2230", fontSize: 32, fontFamily: "Onest-Bold" },
+  mapTitle: { color: "#333", fontSize: 32, fontFamily: "Onest-Bold" },
   sectionTitle: { color: "#333", fontWeight: "800" },
-  primaryBtn: { backgroundColor: "#D81B60", borderRadius: 999, paddingVertical: 12, alignItems: "center" },
-  primaryText: { color: "#FFF", fontWeight: "700" },
-  logDonationBtn: { backgroundColor: "#BA5D84", borderRadius: 10, paddingVertical: 12, alignItems: "center" },
-  logDonationText: { color: "#FFF", fontFamily: "Onest-Bold", fontSize: 20 },
+  primaryBtn: { backgroundColor: "#BA5D84", borderRadius: 10, paddingVertical: 12, alignItems: "center" },
+  primaryText: { color: "#FFF", fontFamily: "Onest-Bold", fontSize: 20 },
+  mainCta: { marginTop: 28 },
   secondaryBtn: { backgroundColor: "#FDECEF", borderRadius: 999, paddingVertical: 12, alignItems: "center" },
   secondaryText: { color: "#333", fontWeight: "700" },
   small: { color: "#777", fontSize: 12 },

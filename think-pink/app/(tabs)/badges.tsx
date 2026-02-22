@@ -1,6 +1,6 @@
 // app/(tabs)/badges.tsx
 import { useEffect, useMemo, useState } from "react";
-import { View, Text, Pressable, Linking, ScrollView } from "react-native";
+import { View, Text, Pressable, Linking, ScrollView, Alert } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 
@@ -44,12 +44,26 @@ type Submission = {
   updatedAt?: string;
 };
 
+function absolutePhotoUrl(url?: string) {
+  if (!url) return "";
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith("/")) return `${API_BASE}${url}`;
+  return `${API_BASE}/${url}`;
+}
+
+function mintExplorerUrl(tx?: string) {
+  if (!tx) return "";
+  if (/^https?:\/\//i.test(tx)) return tx;
+  return `https://explorer.solana.com/tx/${tx}?cluster=devnet`;
+}
+
 export default function BadgesRewardsScreen() {
   const router = useRouter();
   const { user } = useAuth();
 
   const {
     points,
+    lifetimePoints,
     addPoints,
     setPointsLive,
 
@@ -72,6 +86,24 @@ export default function BadgesRewardsScreen() {
   const [loadingImpact, setLoadingImpact] = useState(false);
   const [impactLatest, setImpactLatest] = useState<Submission | null>(null);
   const [impactTx, setImpactTx] = useState<string>("");
+
+  async function openExternal(rawUrl: string) {
+    if (!rawUrl) {
+      Alert.alert("Link unavailable", "No link found for this item yet.");
+      return;
+    }
+
+    try {
+      const supported = await Linking.canOpenURL(rawUrl);
+      if (!supported) {
+        Alert.alert("Cannot open link", rawUrl);
+        return;
+      }
+      await Linking.openURL(rawUrl);
+    } catch {
+      Alert.alert("Cannot open link", rawUrl);
+    }
+  }
 
   useEffect(() => {
     (async () => {
@@ -146,6 +178,19 @@ export default function BadgesRewardsScreen() {
     return { label: "Locked", color: "#8E8E8E" };
   }, [impactBadgeUnlocked, impactBadgeMinted]);
 
+  const statusLevel = useMemo(() => {
+    if (lifetimePoints <= 100) return { name: "Jellyfish", icon: "🪼", nextAt: 200 };
+    if (lifetimePoints <= 200) return { name: "Seahorse", icon: "🐠", nextAt: 300 };
+    if (lifetimePoints <= 300) return { name: "Manatee", icon: "🦭", nextAt: 400 };
+    if (lifetimePoints <= 400) return { name: "Stingray", icon: "🐟", nextAt: 500 };
+    return { name: "Dolphin", icon: "🐬", nextAt: null as number | null };
+  }, [lifetimePoints]);
+
+  const pointsToNext = useMemo(() => {
+    if (!statusLevel.nextAt) return 0;
+    return Math.max(0, statusLevel.nextAt - lifetimePoints);
+  }, [statusLevel, lifetimePoints]);
+
   async function onMintCycleBadge() {
     setErr("");
     setMintResult(null);
@@ -209,9 +254,25 @@ export default function BadgesRewardsScreen() {
       style={{ flex: 1, backgroundColor: "#FDECEF" }}
       contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 110 }}
     >
-      <View style={{ backgroundColor: "#FFF", padding: 16, borderRadius: 20, gap: 8 }}>
-        <Text style={{ color: "#333", fontSize: 18 }}>Badges + Rewards</Text>
-        <Text style={{ color: "#555" }}>Learn, earn points, and mint verified badges.</Text>
+      <View
+        style={{
+          backgroundColor: "#FFF",
+          padding: 16,
+          borderRadius: 20,
+          gap: 8,
+          borderWidth: 1,
+          borderColor: "#F48FB1",
+          alignItems: "center",
+        }}
+      >
+        <Text style={{ fontSize: 36 }}>{statusLevel.icon}</Text>
+        <Text style={{ color: "#333", fontSize: 20 }}>Status: {statusLevel.name}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
+          <Text style={{ color: "#D81B60", fontSize: 16 }}>Lifetime points: {lifetimePoints}</Text>
+          <Text style={{ color: "#555", fontSize: 13 }}>
+            {statusLevel.nextAt ? `${pointsToNext} points until next level` : "Max level reached"}
+          </Text>
+        </View>
       </View>
 
       <View
@@ -355,18 +416,14 @@ export default function BadgesRewardsScreen() {
               </Text>
 
               {impactLatest.photoUrl ? (
-                <Pressable onPress={() => Linking.openURL(impactLatest.photoUrl!)}>
+                <Pressable onPress={() => openExternal(absolutePhotoUrl(impactLatest.photoUrl))}>
                   <Text style={{ color: "#D81B60" }}>View uploaded photo</Text>
                 </Pressable>
               ) : null}
 
               {impactLatest.status === "approved" && (impactLatest.txMint || impactTx) ? (
                 <Pressable
-                  onPress={() =>
-                    Linking.openURL(
-                      `https://explorer.solana.com/tx/${impactLatest.txMint || impactTx}?cluster=devnet`
-                    )
-                  }
+                  onPress={() => openExternal(mintExplorerUrl(impactLatest.txMint || impactTx))}
                 >
                   <Text style={{ color: "#D81B60" }}>View mint tx</Text>
                 </Pressable>

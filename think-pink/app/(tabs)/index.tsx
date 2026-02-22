@@ -29,7 +29,7 @@ type CycleLog = {
   periodStart?: boolean;
   periodEnd?: boolean;
   spotting?: boolean;
-  symptoms?: string;
+  symptoms?: string | string[];
   notes?: string;
 };
 
@@ -41,6 +41,8 @@ type Medication = {
 
 const CYCLE_LENGTH_DAYS = 28;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const STREAK_DAYS_TARGET = 10;
+const STREAK_BONUS_POINTS = 50;
 const SYMPTOM_OPTIONS = ["Nausea", "Acne", "Bloating", "Stomach pain", "Hot flash"];
 const MED_SCHEDULE_OPTIONS = ["Morning", "Afternoon", "Evening", "Bedtime"];
 
@@ -73,6 +75,10 @@ function addDaysISO(iso: string, days: number) {
 
 function medicationTakenKey(uid: string, dateISO: string) {
   return `medications:taken:${uid}:${dateISO}`;
+}
+
+function streakRewardKey(uid: string, streakEndISO: string, streakDays: number) {
+  return `logs:streak-reward:${uid}:${streakEndISO}:${streakDays}`;
 }
 
 function computePeriodDays(logs: Record<string, CycleLog>, todayISO: string) {
@@ -218,6 +224,33 @@ function deriveCycleForDate(dateISO: string, logs: Record<string, CycleLog>, per
   return { cycleDay, phase };
 }
 
+function countConsecutiveLoggedDays(logs: Record<string, CycleLog>, endDateISO: string) {
+  function hasStreakSignal(log?: CycleLog) {
+    if (!log) return false;
+    const symptomCount = Array.isArray(log.symptoms)
+      ? log.symptoms.length
+      : typeof log.symptoms === "string"
+      ? log.symptoms
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean).length
+      : 0;
+    return !!(log.periodStart || log.periodEnd || log.spotting || symptomCount > 0);
+  }
+
+  let streak = 0;
+  let cursor = endDateISO;
+  let safety = 0;
+
+  while (hasStreakSignal(logs[cursor]) && safety < 400) {
+    streak += 1;
+    cursor = addDaysISO(cursor, -1);
+    safety += 1;
+  }
+
+  return streak;
+}
+
 export default function Home() {
   const { user } = useAuth();
   const { addPoints } = useProgress();
@@ -232,6 +265,7 @@ export default function Home() {
   const [logOpen, setLogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+  const [streakNotice, setStreakNotice] = useState("");
 
   const [periodStart, setPeriodStart] = useState(false);
   const [periodEnd, setPeriodEnd] = useState(false);
@@ -398,13 +432,14 @@ export default function Home() {
     setPeriodStart(!!l?.periodStart);
     setPeriodEnd(!!l?.periodEnd);
     setSpotting(!!l?.spotting);
-    const parsedSymptoms =
-      typeof l?.symptoms === "string"
-        ? l.symptoms
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean)
-        : [];
+    const parsedSymptoms = Array.isArray(l?.symptoms)
+      ? l.symptoms.map((s) => String(s).trim()).filter(Boolean)
+      : typeof l?.symptoms === "string"
+      ? l.symptoms
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
     setSelectedSymptoms(parsedSymptoms);
     setNotes(l?.notes || "");
   }, [selectedDate, logsByDate]);
@@ -427,6 +462,8 @@ export default function Home() {
     () => computeExpectedNextPeriodDays(logsByDate, todayISO),
     [logsByDate, todayISO]
   );
+  const currentStreak = useMemo(() => countConsecutiveLoggedDays(logsByDate, todayISO), [logsByDate, todayISO]);
+  const daysUntilStreakBonus = Math.max(0, STREAK_DAYS_TARGET - currentStreak);
 
   // calendar markings (color coding)
   const markedDates = useMemo(() => {
@@ -464,6 +501,7 @@ export default function Home() {
     }
     setSaving(true);
     setErr("");
+    setStreakNotice("");
 
     try {
       const draft: CycleLog = {
@@ -472,7 +510,7 @@ export default function Home() {
         periodStart,
         periodEnd,
         spotting,
-        symptoms: selectedSymptoms.length ? selectedSymptoms.join(", ") : undefined,
+        symptoms: selectedSymptoms.length ? selectedSymptoms : undefined,
         notes: notes.trim() || undefined,
       };
       const nextLogs = { ...logsByDate, [selectedDate]: { ...logsByDate[selectedDate], ...draft } };
@@ -498,7 +536,35 @@ export default function Home() {
       if (!res.ok) throw new Error(data?.error || "Save failed");
 
       const saved: CycleLog = data?.log;
-      setLogsByDate((prev) => ({ ...prev, [saved.dateISO]: { ...payload, ...saved } }));
+      const mergedLogs = { ...logsByDate, [saved.dateISO]: { ...payload, ...saved } };
+      setLogsByDate(mergedLogs);
+
+      const qualifiesForStreak =
+        !!saved.periodStart ||
+        !!saved.periodEnd ||
+        !!saved.spotting ||
+        (Array.isArray(saved.symptoms)
+          ? saved.symptoms.length > 0
+          : typeof saved.symptoms === "string"
+          ? saved.symptoms
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean).length > 0
+          : false);
+
+      if (qualifiesForStreak) {
+        const streak = countConsecutiveLoggedDays(mergedLogs, saved.dateISO);
+        if (streak === STREAK_DAYS_TARGET) {
+          const rewardKey = streakRewardKey(userId, saved.dateISO, STREAK_DAYS_TARGET);
+          const alreadyAwarded = await getItem(rewardKey);
+          if (!alreadyAwarded) {
+            await addPoints(STREAK_BONUS_POINTS);
+            await setItem(rewardKey, "1");
+            setStreakNotice(`Streak bonus earned: +${STREAK_BONUS_POINTS} points`);
+          }
+        }
+      }
+
       setLogOpen(false);
     } catch (e: any) {
       setErr(e?.message || "Save failed");
@@ -512,19 +578,42 @@ export default function Home() {
   const todayPhase = todayCycle.phase;
   const todayCycleDay = todayCycle.cycleDay;
   const progressWidth = todayCycleDay ? Math.max(12, (todayCycleDay / CYCLE_LENGTH_DAYS) * 200) : 12;
+  const phaseIcon =
+    todayPhase === "luteal"
+      ? "☾"
+      : todayPhase === "follicular"
+      ? "◐"
+      : todayPhase === "ovulation"
+      ? "◉"
+      : "●";
 
   return (
     <ScrollView contentContainerStyle={styles.content}>
       {/* Phase Section */}
       <View style={styles.phase}>
-        <View style={styles.phaseText}>
-          <Text style={styles.phaseTitle}>Today: {capitalize(todayPhase)}</Text>
-          <Text style={styles.cycleDay}>Cycle Day {todayCycleDay ?? "—"}</Text>
+        <View style={styles.phaseHeader}>
+          <View style={styles.phaseText}>
+            <View style={styles.phaseTitleRow}>
+              <Text style={styles.phaseTitle}>Today: {capitalize(todayPhase)}</Text>
+              <Text style={styles.phaseIcon}>{phaseIcon}</Text>
+            </View>
+            <Text style={styles.cycleDay}>Cycle Day {todayCycleDay ?? "—"}</Text>
+          </View>
+          <View style={styles.streakBadge}>
+            <Text style={styles.streakBadgeTop}>Streak</Text>
+            <Text style={styles.streakBadgeNum}>{currentStreak}</Text>
+          </View>
         </View>
 
         <View style={styles.progressBar}>
           <View style={[styles.progressFill, { width: progressWidth }]} />
         </View>
+        <Text style={styles.streakMetaInline}>
+          {daysUntilStreakBonus === 0
+            ? "10-day streak reached"
+            : `${daysUntilStreakBonus} day${daysUntilStreakBonus === 1 ? "" : "s"} until +${STREAK_BONUS_POINTS}`}
+        </Text>
+        {streakNotice ? <Text style={styles.streakNotice}>{streakNotice}</Text> : null}
 
         <View style={styles.phaseNote}>
           <Text style={styles.noteText}>
@@ -819,11 +908,27 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   phaseText: { gap: 5 },
+  phaseHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
+  phaseTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
   phaseTitle: {
     fontFamily: "Onest-Bold",
     fontSize: 24,
     fontWeight: "700",
     color: "#250921",
+  },
+  phaseIcon: {
+    color: "#000",
+    fontSize: 20,
+    lineHeight: 22,
+    fontFamily: "Onest-Bold",
   },
   cycleDay: {
     fontFamily: "Onest",
@@ -846,6 +951,37 @@ const styles = StyleSheet.create({
     backgroundColor: "#eaf2d7",
     borderRadius: 15,
     padding: 10,
+  },
+  streakBadge: {
+    minWidth: 58,
+    height: 58,
+    borderRadius: 30,
+    backgroundColor: "#FDECEF",
+    borderWidth: 1,
+    borderColor: "#F2B7CC",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  streakBadgeTop: {
+    color: "#250921",
+    fontFamily: "Onest",
+    fontSize: 10,
+  },
+  streakBadgeNum: {
+    color: "#000",
+    fontFamily: "Onest-Bold",
+    fontSize: 18,
+    lineHeight: 20,
+  },
+  streakMetaInline: {
+    color: "#555",
+    fontFamily: "Onest",
+    fontSize: 13,
+  },
+  streakNotice: {
+    color: "#2E7D32",
+    fontFamily: "Onest-Bold",
+    fontSize: 13,
   },
   noteText: {
     fontFamily: "Onest",
