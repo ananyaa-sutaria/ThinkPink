@@ -7,6 +7,10 @@ export default function PageWrapper({ children }: { children: React.ReactNode })
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: "#fff",
+  },
   container: {
     flex: 1,
     paddingHorizontal: 25,

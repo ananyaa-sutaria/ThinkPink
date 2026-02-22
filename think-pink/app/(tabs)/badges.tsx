@@ -328,7 +328,7 @@ export default function BadgesRewardsScreen() {
           <Pressable
             onPress={() => setShowRedeem((s) => !s)}
             style={{
-              backgroundColor: "#FDECEF",
+              backgroundColor: "#fff",
               borderRadius: 999,
               paddingVertical: 10,
               paddingHorizontal: 14,

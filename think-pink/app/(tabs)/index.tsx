@@ -890,10 +890,12 @@ function capitalize(s: string) {
 
 const styles = StyleSheet.create({
   content: {
-    gap: 18,
-    paddingHorizontal: 25,
+    flexGrow: 1,
+    padding: 25,
     paddingTop: 40,
-    paddingBottom: 110,
+    paddingBottom: 80, // ensures content stops above tab bar
+    gap: 18,
+    backgroundColor: "#fff",
   },
   phase: {
     gap: 10,
@@ -1117,7 +1119,6 @@ const styles = StyleSheet.create({
     padding: 8,
     backgroundColor: "#eaf2d7",
     borderRadius: 15,
-    marginBottom: 5,
   },
   medEmpty: { fontFamily: "Onest", fontSize: 14, color: "#555" },
   medName: { fontFamily: "Onest-Bold", fontSize: 16, color: "#250921" },

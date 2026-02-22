@@ -210,10 +210,7 @@ export default function LearnScreen() {
         level: levelMeta.difficulty,
         numQuestions: 5,
       });
-
       setQuiz(q);
-
-      // init answer map
       const init: Record<string, QuizChoice | null> = {};
       q.questions.forEach((qq) => (init[qq.id] = null));
       setAnswers(init);
@@ -234,24 +231,16 @@ export default function LearnScreen() {
     if (!quiz) return;
     const levelMeta = QUIZ_LEVELS.find((lvl) => lvl.id === activeLevel);
     if (!levelMeta) return;
-
-    // ensure all answered
     const anyBlank = quiz.questions.some((q) => !answers[q.id]);
-    if (anyBlank) {
-      setLearnErr("Please answer all questions before submitting.");
-      return;
-    }
-    setLearnErr("");
+    if (anyBlank) return;
 
     // compute score
     let s = 0;
     for (const q of quiz.questions) {
       if (answers[q.id] === q.answer) s += 1;
     }
-
     setSubmitted(true);
 
-    // unlock badge if pass
     if (s >= PASS_SCORE) {
       setUnlocked(true);
       if (levelMeta.id === 1) {
@@ -441,43 +430,27 @@ export default function LearnScreen() {
                     <Pressable
                       key={ch}
                       onPress={() => choose(q.id, ch)}
-                      style={{
-                        paddingVertical: 10,
-                        paddingHorizontal: 12,
-                        borderRadius: 14,
-                        backgroundColor: selected ? "#FDECEF" : "#FFFFFF",
-                        borderWidth: 1,
-                        borderColor: correct ? "#2E7D32" : wrongSelected ? "#C62828" : "#F48FB1",
-                        opacity: submitted ? 0.9 : 1,
-                      }}
+                      style={[
+                        styles.choiceBtn,
+                        selected && { backgroundColor: "#FDECEF" },
+                        correct && { borderColor: "#2E7D32" },
+                        wrongSelected && { borderColor: "#C62828" },
+                      ]}
                     >
-                      <Text style={{ color: "#333" }}>
+                      <Text style={styles.choiceText}>
                         {ch}. {q.choices[ch]}
                       </Text>
                     </Pressable>
                   );
                 })}
 
-                {submitted && (
-                  <Text style={{ color: "#555" }}>
-                    Explanation: {q.explanation}
-                  </Text>
-                )}
+                {submitted && <Text style={styles.cardText}>Explanation: {q.explanation}</Text>}
               </View>
             ))}
 
             {!submitted ? (
-              <Pressable
-                onPress={submit}
-                style={{
-                  marginTop: 14,
-                  backgroundColor: "#D81B60",
-                  borderRadius: 999,
-                  paddingVertical: 12,
-                  alignItems: "center",
-                }}
-              >
-                <Text style={{ color: "#FFF", fontWeight: "700" }}>Submit</Text>
+              <Pressable onPress={submit} style={styles.primaryBtn}>
+                <Text style={styles.primaryText}>Submit</Text>
               </Pressable>
             ) : (
               <View style={{ marginTop: 14, gap: 10 }}>
@@ -500,16 +473,8 @@ export default function LearnScreen() {
                   </Text>
                 </View>
 
-                <Pressable
-                  onPress={reset}
-                  style={{
-                    backgroundColor: "#FDECEF",
-                    borderRadius: 999,
-                    paddingVertical: 12,
-                    alignItems: "center",
-                  }}
-                >
-                  <Text style={{ color: "#333", fontWeight: "700" }}>Back</Text>
+                <Pressable onPress={reset} style={[styles.primaryBtn, { backgroundColor: "#FDECEF" }]}>
+                  <Text style={[styles.primaryText, { color: "#333" }]}>Back</Text>
                 </Pressable>
               </View>
             )}
@@ -527,7 +492,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
-    paddingBottom: 110,
+    paddingBottom: 60,
   },
   panel: {
     marginTop: 12,
@@ -722,4 +687,56 @@ const styles = StyleSheet.create({
     fontFamily: "Onest-Bold",
     fontSize: 13,
   },
+
+  // ⚡ ADD THESE STYLES
+  choiceBtn: {
+    borderWidth: 1,
+    borderColor: "#F2B7CC",
+    borderRadius: 12,
+    padding: 10,
+    marginVertical: 4,
+    backgroundColor: "#FFF",
+  },
+  choiceText: {
+    fontFamily: "Onest",
+    color: "#2D2230",
+    fontSize: 14,
+  },
+  cardText: {
+    fontFamily: "Onest",
+    color: "#333",
+    fontSize: 14,
+    marginTop: 6,
+  },
+  primaryBtn: {
+    backgroundColor: "#BA5D84",
+    padding: 12,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 12,
+  },
+  primaryText: {
+    fontFamily: "Onest-Bold",
+    color: "#FFF",
+    fontSize: 16,
+  },
+  badgeCallout: {
+  backgroundColor: "#FFF3E0",
+  borderRadius: 12,
+  borderWidth: 1,
+  borderColor: "#FFB74D",
+  padding: 12,
+  marginTop: 12,
+  gap: 6,
+},
+badgeCalloutTitle: {
+  fontFamily: "Onest-Bold",
+  fontSize: 16,
+  color: "#E65100",
+},
+badgeCalloutText: {
+  fontFamily: "Onest",
+  fontSize: 14,
+  color: "#E65100",
+},
 });
