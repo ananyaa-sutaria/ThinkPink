@@ -11,8 +11,8 @@ const authorizationResultCache: AuthorizationResultCache = {
   clear: async () => {},
 };
 
-const addressSelector: AddressSelector = (addresses) => {
-  return addresses[0];
+const addressSelector: AddressSelector = {
+  select: async (addresses) => addresses[0]!,
 };
 
 const wallet = new SolanaMobileWalletAdapter({

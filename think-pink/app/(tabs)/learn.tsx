@@ -688,7 +688,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 
-  // ⚡ ADD THESE STYLES
   choiceBtn: {
     borderWidth: 1,
     borderColor: "#F2B7CC",
@@ -720,23 +719,4 @@ const styles = StyleSheet.create({
     color: "#FFF",
     fontSize: 16,
   },
-  badgeCallout: {
-  backgroundColor: "#FFF3E0",
-  borderRadius: 12,
-  borderWidth: 1,
-  borderColor: "#FFB74D",
-  padding: 12,
-  marginTop: 12,
-  gap: 6,
-},
-badgeCalloutTitle: {
-  fontFamily: "Onest-Bold",
-  fontSize: 16,
-  color: "#E65100",
-},
-badgeCalloutText: {
-  fontFamily: "Onest",
-  fontSize: 14,
-  color: "#E65100",
-},
 });
