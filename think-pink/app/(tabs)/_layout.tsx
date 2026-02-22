@@ -95,9 +95,10 @@ export default function TabsLayout() {
   if (!fontsLoaded) return null;
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={styles.root}>
       <Tabs
         screenOptions={{
+          sceneStyle: { backgroundColor: "#FFF" },
 
           /* ---------- HEADER ---------- */
           headerTitle: () => (
@@ -109,7 +110,7 @@ export default function TabsLayout() {
 
           headerBackground: () => <AnimatedHeader routeName={routeName} />,
           headerTitleAlign: isHome ? "left" : "center",
-          headerStyle: { backgroundColor: "transparent" },
+          headerStyle: { backgroundColor: "#FFF" },
           headerTintColor: "#fff",
 
           /* ---------- TAB BAR ---------- */
@@ -192,6 +193,10 @@ export default function TabsLayout() {
 
 /* ------------------ STYLES ---------------------- */
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: "#FFF",
+  },
   waveContainer: {
     position: "absolute",
     top: 0,

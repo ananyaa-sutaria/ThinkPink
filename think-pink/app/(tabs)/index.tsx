@@ -952,7 +952,8 @@ const styles = StyleSheet.create({
   phaseNote: {
     backgroundColor: "#eaf2d7",
     borderRadius: 15,
-    padding: 10,
+    paddingVertical: 7,
+    paddingHorizontal: 9,
   },
   streakBadge: {
     minWidth: 58,
@@ -987,7 +988,8 @@ const styles = StyleSheet.create({
   },
   noteText: {
     fontFamily: "Onest",
-    fontSize: 16,
+    fontSize: 14,
+    lineHeight: 18,
     color: "#250921",
   },
   card: {
