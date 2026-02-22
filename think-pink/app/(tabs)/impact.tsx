@@ -399,7 +399,7 @@ export default function ImpactScreen() {
                 style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
               >
                 <Text style={styles.sectionTitle}>My submissions</Text>
-                <Text style={{ color: "#D81B60", fontWeight: "700" }}>{submissionsOpen ? "Hide" : "Show"}</Text>
+                <Text style={{ color: "#BA5D84", fontWeight: "700" }}>{submissionsOpen ? "Hide" : "Show"}</Text>
               </Pressable>
 
               {submissionsOpen ? (
@@ -424,7 +424,7 @@ export default function ImpactScreen() {
             </View>
 
             <Pressable onPress={() => setDonateOpen(false)} style={styles.backBtn}>
-              <Text style={{ color: "#D81B60" }}>Close</Text>
+              <Text style={{ color: "#BA5D84" }}>Close</Text>
             </Pressable>
           </ScrollView>
         </View>
@@ -531,7 +531,7 @@ function NativeMap({ coords, centers }: { coords: { lat: number; lng: number }; 
   const pinColorFor = (type?: NearbyCenter["type"]) => {
     if (type === "abortion") return "#8E24AA";
     if (type === "women") return "#EC407A";
-    return "#D81B60";
+    return "#BA5D84";
   };
 
   return (

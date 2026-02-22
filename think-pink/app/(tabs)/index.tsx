@@ -801,7 +801,7 @@ export default function Home() {
                 disabled={saving}
                 style={{
                   flex: 1,
-                  backgroundColor: saving ? "#F48FB1" : "#D81B60",
+                  backgroundColor: saving ? "#F48FB1" : "#BA5D84",
                   padding: 12,
                   borderRadius: 16,
                   alignItems: "center",
@@ -854,7 +854,7 @@ export default function Home() {
 
               <Pressable
                 onPress={addMedication}
-                style={{ flex: 1, backgroundColor: "#D81B60", padding: 12, borderRadius: 16, alignItems: "center" }}
+                style={{ flex: 1, backgroundColor: "#BA5D84", padding: 12, borderRadius: 16, alignItems: "center" }}
               >
                 <Text style={{ color: "#FFF" }}>Add</Text>
               </Pressable>
@@ -1072,7 +1072,7 @@ const styles = StyleSheet.create({
   },
   symptomOptionActive: {
     backgroundColor: "#FDECEF",
-    borderColor: "#D81B60",
+    borderColor: "#BA5D84",
   },
   checkbox: {
     width: 16,
@@ -1083,8 +1083,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFF",
   },
   checkboxActive: {
-    backgroundColor: "#D81B60",
-    borderColor: "#D81B60",
+    backgroundColor: "#BA5D84",
+    borderColor: "#BA5D84",
   },
   symptomText: {
     color: "#333",
@@ -1112,7 +1112,7 @@ const styles = StyleSheet.create({
   },
   scheduleOptionActive: {
     backgroundColor: "#FDECEF",
-    borderColor: "#D81B60",
+    borderColor: "#BA5D84",
   },
   medItem: {
     flexDirection: "row",
@@ -1133,7 +1133,7 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
   },
   takenButtonActive: {
-    backgroundColor: "#D81B60",
+    backgroundColor: "#BA5D84",
   },
   takenButtonDone: {
     backgroundColor: "#2E7D32",
