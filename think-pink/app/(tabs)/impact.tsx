@@ -140,7 +140,7 @@ useEffect(() => {
               ) : !coords ? (
                   <Text style={{ color: "#555" }}>Getting your location…</Text>
               ) : isWeb ? (
-                  <View style={styles.webMapPlaceholder}>
+                  <View style={styles.mapPlaceholder}>
                       <Text style={{ color: "#555" }}>
                           Map preview is available on mobile only (Expo web doesn’t support react-native-maps).
                       </Text>
@@ -364,7 +364,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 12,
   },
-  primaryText: { color: "#FFF", fontWeight: "700" },
 });
 
 
