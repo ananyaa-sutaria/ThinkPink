@@ -79,6 +79,7 @@ export default function BadgesRewardsScreen() {
 
   const [wallet, setWallet] = useState<string>("");
   const [minting, setMinting] = useState(false);
+  const [redeemingCost, setRedeemingCost] = useState<number | null>(null);
   const [mintResult, setMintResult] = useState<any>(null);
   const [err, setErr] = useState<string>("");
   const [showRedeem, setShowRedeem] = useState(false);
@@ -232,9 +233,51 @@ export default function BadgesRewardsScreen() {
       setErr("Not enough points yet.");
       return;
     }
+    const uid = (user as any)?.userId || (user as any)?.id;
+    if (!uid) {
+      setErr("Log in to redeem.");
+      return;
+    }
+    if (!wallet) {
+      setErr("Add your Solana wallet in Account first.");
+      return;
+    }
 
-    await addPoints(-cost);
-    setMintResult({ signature: "demo", explorer: "", note: `Redeemed ${cost} points` });
+    setRedeemingCost(cost);
+    try {
+      const res = await fetch(`${API_BASE}/solana/redeem-points`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true",
+        },
+        body: JSON.stringify({
+          userId: uid,
+          walletAddress: wallet,
+          pointsCost: cost,
+        }),
+      });
+
+      const text = await res.text();
+      let data: any = null;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Non-JSON response (${res.status}): ${text.slice(0, 120)}`);
+      }
+      if (!res.ok) throw new Error(data?.error || `Redeem failed (${res.status})`);
+
+      await setPointsLive(Number(data?.pointsAfter ?? Math.max(0, points - cost)));
+      setMintResult({
+        signature: data.signature,
+        explorer: data.explorer,
+        note: `Redeemed ${cost} points -> sent ${Number(data?.solSent || 0).toFixed(6)} SOL (devnet)`,
+      });
+    } catch (e: any) {
+      setErr(e?.message || "Redeem failed");
+    } finally {
+      setRedeemingCost(null);
+    }
   }
 
   const impactSubtitle = useMemo(() => {
@@ -249,22 +292,23 @@ export default function BadgesRewardsScreen() {
     return "Log a donation to unlock.";
   }, [user, loadingImpact, impactLatest]);
 
+  const homeCardStyle = {
+    backgroundColor: "#FFF" as const,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#ea9ab2",
+    shadowColor: "#ea9ab2",
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 10,
+  };
+
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: "#FDECEF" }}
+      style={{ flex: 1, backgroundColor: "#FFF" }}
       contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 110 }}
     >
-      <View
-        style={{
-          backgroundColor: "#FFF",
-          padding: 16,
-          borderRadius: 20,
-          gap: 8,
-          borderWidth: 1,
-          borderColor: "#F48FB1",
-          alignItems: "center",
-        }}
-      >
+      <View style={[homeCardStyle, { padding: 16, gap: 8, alignItems: "center" }]}>
         <Text style={{ fontSize: 36 }}>{statusLevel.icon}</Text>
         <Text style={{ color: "#333", fontSize: 20 }}>Status: {statusLevel.name}</Text>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
@@ -275,16 +319,7 @@ export default function BadgesRewardsScreen() {
         </View>
       </View>
 
-      <View
-        style={{
-          backgroundColor: "#FFF",
-          padding: 16,
-          borderRadius: 20,
-          gap: 10,
-          borderWidth: 1,
-          borderColor: "#F48FB1",
-        }}
-      >
+      <View style={[homeCardStyle, { padding: 16, gap: 10 }]}>
         <Text style={{ color: "#333" }}>Your impact balance</Text>
         <Text style={{ color: "#D81B60", fontSize: 28 }}>{points} PNK points</Text>
         <Text style={{ color: "#555" }}>Earn points by passing quizzes and logging impact.</Text>
@@ -318,7 +353,7 @@ export default function BadgesRewardsScreen() {
 
       <View style={{ gap: 12 }}>
         {/* Cycle badge */}
-        <View style={{ backgroundColor: "#FFF", padding: 16, borderRadius: 20, gap: 10 }}>
+        <View style={[homeCardStyle, { padding: 16, gap: 10 }]}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <Text style={{ color: "#333", fontSize: 16 }}>Cycle Literacy Level 1</Text>
             <BadgePill label={cycleBadgeStatus.label} color={cycleBadgeStatus.color} />
@@ -373,7 +408,7 @@ export default function BadgesRewardsScreen() {
         </View>
 
         {/* Impact badge */}
-        <View style={{ backgroundColor: "#FFF", padding: 16, borderRadius: 20, gap: 10 }}>
+        <View style={[homeCardStyle, { padding: 16, gap: 10 }]}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <Text style={{ color: "#333", fontSize: 16 }}>Period Equity Supporter</Text>
             <BadgePill label={impactBadgeStatus.label} color={impactBadgeStatus.color} />
@@ -434,44 +469,50 @@ export default function BadgesRewardsScreen() {
       </View>
 
       {showRedeem ? (
-        <View style={{ backgroundColor: "#FFF", padding: 16, borderRadius: 20, gap: 10 }}>
+        <View style={[homeCardStyle, { padding: 16, gap: 10 }]}>
           <Text style={{ color: "#333", fontSize: 16 }}>Rewards</Text>
-          <Text style={{ color: "#555" }}>Redeem points for impact perks (demo mode).</Text>
+          <Text style={{ color: "#555" }}>Redeem points for real devnet payout from treasury wallet.</Text>
 
           <View style={{ gap: 10 }}>
             <Pressable
               onPress={() => redeem(100)}
+              disabled={redeemingCost !== null}
               style={{
-                backgroundColor: points >= 100 ? "#D81B60" : "#F48FB1",
+                backgroundColor: points >= 100 && redeemingCost === null ? "#D81B60" : "#F48FB1",
                 borderRadius: 16,
                 padding: 12,
               }}
             >
-              <Text style={{ color: "#FFF" }}>Redeem 100 points: donate 1 kit (demo)</Text>
+              <Text style={{ color: "#FFF" }}>
+                {redeemingCost === 100 ? "Redeeming…" : "Redeem 100 points (~0.001 SOL devnet)"}
+              </Text>
             </Pressable>
 
             <Pressable
               onPress={() => redeem(250)}
+              disabled={redeemingCost !== null}
               style={{
-                backgroundColor: points >= 250 ? "#D81B60" : "#F48FB1",
+                backgroundColor: points >= 250 && redeemingCost === null ? "#D81B60" : "#F48FB1",
                 borderRadius: 16,
                 padding: 12,
               }}
             >
-              <Text style={{ color: "#FFF" }}>Redeem 250 points: donate 3 kits (demo)</Text>
+              <Text style={{ color: "#FFF" }}>
+                {redeemingCost === 250 ? "Redeeming…" : "Redeem 250 points (~0.0025 SOL devnet)"}
+              </Text>
             </Pressable>
           </View>
         </View>
       ) : null}
 
       {err ? (
-        <View style={{ backgroundColor: "#FFF", padding: 12, borderRadius: 16 }}>
+        <View style={[homeCardStyle, { padding: 12 }]}>
           <Text style={{ color: "#C62828" }}>{err}</Text>
         </View>
       ) : null}
 
       {mintResult ? (
-        <View style={{ backgroundColor: "#FFF", padding: 16, borderRadius: 20, gap: 8 }}>
+        <View style={[homeCardStyle, { padding: 16, gap: 8 }]}>
           <Text style={{ color: "#333" }}>Latest</Text>
 
           {mintResult.note ? <Text style={{ color: "#333" }}>{mintResult.note}</Text> : null}

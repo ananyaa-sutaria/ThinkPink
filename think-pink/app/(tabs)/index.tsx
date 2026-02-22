@@ -753,7 +753,7 @@ export default function Home() {
 
       {/* Log Modal */}
       <Modal visible={logOpen} animationType="slide" onRequestClose={() => setLogOpen(false)}>
-        <View style={{ flex: 1, backgroundColor: "#FDECEF", padding: 16, gap: 12, justifyContent: "center" }}>
+        <View style={{ flex: 1, backgroundColor: "#FFF", padding: 16, gap: 12, justifyContent: "center" }}>
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Log day</Text>
             <Text style={{ color: "#555" }}>{selectedDate}</Text>
@@ -818,7 +818,7 @@ export default function Home() {
 
       {/* Medications Modal */}
       <Modal visible={medOpen} animationType="slide" onRequestClose={() => setMedOpen(false)}>
-        <View style={{ flex: 1, backgroundColor: "#FDECEF", padding: 16, gap: 12, justifyContent: "center" }}>
+        <View style={{ flex: 1, backgroundColor: "#FFF", padding: 16, gap: 12, justifyContent: "center" }}>
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Add medication</Text>
             <TextInput
