@@ -1,13 +1,11 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
-import { API_BASE } from "../lib/api"; // make sure this points to your API config
+import React, { createContext, useContext, useEffect, useState } from "react";
+import { API_BASE } from "../lib/api";
 
-// -------------------------
-// Types
-// -------------------------
 interface User {
-  userId: string; // Must match your backend field
+  userId: string;
   name: string;
   wallet?: string;
+  pronouns?: string;
 }
 
 interface AuthContextType {
@@ -24,61 +22,48 @@ const AuthContext = createContext<AuthContextType>({
   signOut: () => {},
 });
 
-// -------------------------
-// Provider
-// -------------------------
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Load stored user from AsyncStorage/localStorage if needed
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 500);
+    const timer = setTimeout(() => setIsLoading(false), 300);
     return () => clearTimeout(timer);
   }, []);
 
-  // -------------------------
-  // Sync user with backend
-  // -------------------------
   const syncUser = async (userData: User) => {
     try {
       const res = await fetch(`${API_BASE}/api/users/sync`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true",
+        },
         body: JSON.stringify({
           userId: userData.userId,
           name: userData.name,
           wallet: userData.wallet || "",
+          pronouns: userData.pronouns || "",
         }),
       });
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Sync failed");
-      console.log("✅ User synced:", data);
+      if (!res.ok) throw new Error(data?.error || "Sync failed");
     } catch (err: any) {
-      console.warn("User sync failed:", err.message);
+      console.warn("User sync failed:", err?.message || err);
     }
   };
 
-  // -------------------------
-  // Sign in
-  // -------------------------
   const signIn = async (userData: User) => {
     setUser(userData);
-    await syncUser(userData); // sync immediately after login
+    await syncUser(userData);
   };
 
-  const signOut = () => setUser(null);
+  const signOut = () => {
+    setUser(null);
+  };
 
-  return (
-    <AuthContext.Provider value={{ user, isLoading, signIn, signOut }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={{ user, isLoading, signIn, signOut }}>{children}</AuthContext.Provider>;
 }
 
-// -------------------------
-// Hook
-// -------------------------
 export const useAuth = () => useContext(AuthContext);
