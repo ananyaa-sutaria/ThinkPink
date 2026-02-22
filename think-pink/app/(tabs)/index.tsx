@@ -892,7 +892,7 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
     padding: 25,
-    paddingTop: 40,
+    paddingTop: 50,
     paddingBottom: 80, // ensures content stops above tab bar
     gap: 18,
     backgroundColor: "#fff",
