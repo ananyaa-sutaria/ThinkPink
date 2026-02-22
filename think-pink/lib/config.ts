@@ -1,1 +1,1 @@
-export const API_BASE ="http://10.136.132.82:5000"
+export const API_BASE ="http://10.136.132.82:5000";

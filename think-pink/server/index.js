@@ -3,45 +3,186 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import fs from "fs";
+import multer from "multer";
 import path from "path";
 import mongoose from "mongoose";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { Connection, PublicKey, Keypair, clusterApiUrl } from "@solana/web3.js";
+import { Connection, PublicKey, Keypair, clusterApiUrl, SystemProgram, Transaction, sendAndConfirmTransaction } from "@solana/web3.js";
 import { createMint, getOrCreateAssociatedTokenAccount, mintTo } from "@solana/spl-token";
 import CycleLog from "./models/CycleLog.js";
 import BadgeMint from "./models/BadgeMint.js";
 import { createPointsMintOnce, awardPointsToWallet } from "./solanaPoints.js";
 import DonationSubmission from "./models/donationSubmission.js";
-// const Location = require("./models/Location");
+import impactRoutes from "./impactRoutes.js";
+import { makeDaoRouter } from "./daoRoutes.js";
+import geoRoutes from "./geoRoutes.js";
+import User from "./models/user.js";
+import UserPoints from "./models/userPoints.js";
 import Location from "./models/Location.js";
 
 dotenv.config();
+console.log("BADGE_MINT =", process.env.BADGE_MINT);
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.get("/", (req, res) => res.send("OK"));
-app.get("/health", (req, res) => res.json({ ok: true }));
+app.use(express.urlencoded({ extended: true }));
 
-// --------------------
-// Config & Constants
+app.use(impactRoutes);            // if impactRoutes defines full paths like "/impact/submit"
+app.use(geoRoutes);
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+
+app.get("/", (req, res) => res.send("OK"));
 // --------------------
 const PORT = process.env.PORT || 5000;
 const CLUSTER = process.env.SOLANA_CLUSTER || "devnet";
-const RPC_URL = process.env.SOLANA_RPC_URL || clusterApiUrl(CLUSTER);
-const connection = new Connection(RPC_URL, "confirmed");
+const serverWallet = loadServerKeypair();
+
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const RPC_URL = process.env.SOLANA_RPC_URL || clusterApiUrl(CLUSTER);
+app.get("/health", (req, res) => res.json({ ok: true }));
+const connection = new Connection(RPC_URL, "confirmed");
+
+app.use(makeDaoRouter({ connection }));
+// --------------------
+// Config & Constants
+
+const CHAT_SYMPTOM_RULES = [
+  { label: "Nausea", patterns: [/\bnausea\b/i, /\bnauseous\b/i, /\bqueasy\b/i] },
+  { label: "Acne", patterns: [/\bacne\b/i, /\bpimple(s)?\b/i, /\bbreakout(s)?\b/i] },
+  { label: "Bloating", patterns: [/\bbloat(ing|ed)?\b/i, /\bbloated\b/i] },
+  {
+    label: "Stomach pain",
+    patterns: [/\bstomach pain\b/i, /\babdominal pain\b/i, /\bcramp(s|ing)?\b/i, /\bbelly pain\b/i],
+  },
+  { label: "Hot flash", patterns: [/\bhot flash(es)?\b/i, /\boverheat(ing)?\b/i, /\btoo hot\b/i] },
+];
+
+function resolveGeminiModel(raw) {
+  const value = String(raw || "").trim().toLowerCase();
+  if (!value) return "gemini-2.5-flash";
+
+  // Friendly aliases
+  if (["flash3", "flash-3", "gemini-flash-3", "gemini 3 flash"].includes(value)) {
+    return "gemini-2.5-flash";
+  }
+  if (["flash", "fast"].includes(value)) {
+    return "gemini-2.5-flash";
+  }
+  if (["pro", "gemini-pro"].includes(value)) {
+    return "gemini-2.5-pro";
+  }
+
+  return String(raw).trim();
+}
+
+async function generateWithFallbackModels(prompt, preferredModel) {
+  const candidates = [
+    resolveGeminiModel(preferredModel),
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash-latest",
+  ];
+  const tried = new Set();
+  let lastErr = null;
+
+  for (const name of candidates) {
+    if (!name || tried.has(name)) continue;
+    tried.add(name);
+    try {
+      const model = genAI.getGenerativeModel({ model: name });
+      const result = await model.generateContent(prompt);
+      return { answer: result.response.text().trim(), modelUsed: name };
+    } catch (err) {
+      lastErr = err;
+      console.error(`CYCLE CHAT MODEL ERROR (${name}):`, err);
+    }
+  }
+
+  throw lastErr || new Error("No Gemini model succeeded");
+}
+
+function normalizeCoachParagraph(answer) {
+  const raw = String(answer || "");
+  if (!raw) return raw;
+
+  const lines = raw
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((line) => line.replace(/^(Phase|Pattern|Try today|Next|Nudge)\s*:\s*/i, "").trim());
+
+  if (lines.length === 0) return raw;
+
+  // Join into paragraph-style output. Keep one line break between major thoughts.
+  const merged = lines.join(" ");
+  return merged
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([.,!?;:])/g, "$1")
+    .trim();
+}
+
+function extractChatSymptomsAndNotes(message) {
+  const text = String(message || "").trim();
+  if (!text) return { matchedSymptoms: [], shouldAddToNotes: false };
+
+  const matched = new Set();
+  for (const rule of CHAT_SYMPTOM_RULES) {
+    if (rule.patterns.some((rx) => rx.test(text))) matched.add(rule.label);
+  }
+
+  const looksLikeFeelingMessage =
+    /\b(i feel|i'm feeling|im feeling|i have|i'm having|im having|symptom|symptoms|pain|cramps?|nausea|bloating|acne|hot flash)\b/i.test(
+      text
+    );
+
+  return {
+    matchedSymptoms: Array.from(matched),
+    shouldAddToNotes: matched.size === 0 && looksLikeFeelingMessage,
+  };
+}
+
+async function persistChatSignalToTodayLog({ userId, dateISO, message }) {
+  if (!userId || !dateISO || !message) return;
+
+  const { matchedSymptoms, shouldAddToNotes } = extractChatSymptomsAndNotes(message);
+  if (matchedSymptoms.length === 0 && !shouldAddToNotes) return;
+
+  const existing = await CycleLog.findOne({ userId, dateISO });
+  const noteLine = `Chat note: ${String(message).trim()}`;
+
+  if (!existing) {
+    await CycleLog.create({
+      userId,
+      dateISO,
+      symptoms: matchedSymptoms,
+      notes: shouldAddToNotes ? noteLine : undefined,
+    });
+    return;
+  }
+
+  const nextSymptoms = Array.isArray(existing.symptoms) ? [...existing.symptoms] : [];
+  for (const s of matchedSymptoms) {
+    if (!nextSymptoms.includes(s)) nextSymptoms.push(s);
+  }
+  existing.symptoms = nextSymptoms;
+
+  if (shouldAddToNotes) {
+    const prevNotes = String(existing.notes || "");
+    if (!prevNotes.includes(noteLine)) {
+      existing.notes = prevNotes ? `${prevNotes}\n${noteLine}` : noteLine;
+    }
+  }
+
+  await existing.save();
+}
+
 
 // --------------------
 // Mongo Setup
 // --------------------
-const userSchema = new mongoose.Schema({
-  userId: { type: String, required: true, unique: true },
-  name: { type: String, required: true },
-  password: { type: String, required: true },
-  wallet: { type: String, default: "" },
-  createdAt: { type: Date, default: Date.now }
-});
-const User = mongoose.model("User", userSchema);
+
+const UPLOAD_DIR = path.join(process.cwd(), "uploads");
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 async function connectMongo() {
   const uri = process.env.MONGO_URI;
@@ -59,7 +200,7 @@ function loadServerKeypair() {
   const secret = JSON.parse(fs.readFileSync(abs, "utf-8"));
   return Keypair.fromSecretKey(Uint8Array.from(secret));
 }
-const serverWallet = loadServerKeypair();
+
 
 async function awardBadgeToWallet(walletAddress) {
   const mintStr = process.env.BADGE_MINT;
@@ -76,12 +217,12 @@ async function awardBadgeToWallet(walletAddress) {
 // --------------------
 app.post("/api/users/signup", async (req, res) => {
   try {
-    const { username, password, wallet } = req.body;
+    const { username, password, wallet, pronouns } = req.body;
     const existing = await User.findOne({ name: username });
     if (existing) return res.status(400).json({ error: "Username exists" });
 
     const userId = `${username.toLowerCase().replace(/\s/g, "_")}_${Math.floor(100 + Math.random() * 900)}`;
-    const newUser = new User({ userId, name: username, password, wallet: wallet || "" });
+    const newUser = new User({ userId, name: username, pronouns: pronouns || "", password, wallet: wallet || "" });
     await newUser.save();
     res.json(newUser);
   } catch (err) {
@@ -103,19 +244,20 @@ app.post("/api/users/signin", async (req, res) => {
 // server/index.js
 app.post("/api/users/change-password", async (req, res) => {
   try {
-    const { userId, newPassword } = req.body;
+    const { userId, currentPassword, newPassword } = req.body;
 
-    if (!userId || !newPassword) {
-      return res.status(400).json({ error: "userId and newPassword are required" });
+    if (!userId || !currentPassword || !newPassword) {
+      return res.status(400).json({ error: "userId, currentPassword and newPassword are required" });
     }
 
-    const updated = await User.findOneAndUpdate(
-      { userId },
-      { $set: { password: newPassword } },
-      { new: true }
-    );
+    const existing = await User.findOne({ userId });
+    if (!existing) return res.status(404).json({ error: "User not found" });
+    if (existing.password !== currentPassword) {
+      return res.status(401).json({ error: "Current password is incorrect" });
+    }
 
-    if (!updated) return res.status(404).json({ error: "User not found" });
+    existing.password = newPassword;
+    await existing.save();
 
     res.json({ ok: true, message: "Password updated successfully" });
   } catch (err) {
@@ -126,15 +268,21 @@ app.post("/api/users/change-password", async (req, res) => {
 
 app.post("/api/users/sync", async (req, res) => {
   try {
-    const { userId, name, wallet, password } = req.body;
+    const { userId, name, wallet, password, pronouns } = req.body;
 
     if (!userId) {
       return res.status(400).json({ error: "userId is required" });
     }
 
+    const updates = {};
+    if (name !== undefined) updates.name = name;
+    if (wallet !== undefined) updates.wallet = wallet;
+    if (pronouns !== undefined) updates.pronouns = pronouns;
+    if (password !== undefined && String(password).length > 0) updates.password = password;
+
     const updatedUser = await User.findOneAndUpdate(
       { userId },
-      { $set: { name, wallet, password } },
+      { $set: updates },
       { new: true }
     );
 
@@ -172,6 +320,74 @@ app.post("/solana/award-badge", async (req, res) => {
   }
 });
 
+app.post("/solana/redeem-points", async (req, res) => {
+  try {
+    const { userId, walletAddress, pointsCost } = req.body || {};
+    const cost = Number(pointsCost);
+
+    if (!userId) return res.status(400).json({ error: "userId required" });
+    if (!walletAddress) return res.status(400).json({ error: "walletAddress required" });
+    if (!Number.isFinite(cost) || cost <= 0) return res.status(400).json({ error: "pointsCost must be > 0" });
+
+    const recipient = new PublicKey(String(walletAddress).trim());
+    const [userPointsRow, userRow] = await Promise.all([
+      UserPoints.findOne({ userId }),
+      User.findOne({ userId }).lean(),
+    ]);
+    const userPointsBalance = Number(userPointsRow?.points || 0);
+    const userBalance = Number(userRow?.points || 0);
+    const currentPoints = Math.max(userPointsBalance, userBalance);
+    if (currentPoints < cost) {
+      return res.status(400).json({
+        error: "Not enough points",
+        pointsAvailable: currentPoints,
+      });
+    }
+
+    const lamportsPerPoint = Number(process.env.REDEEM_LAMPORTS_PER_POINT || 10000); // 0.00001 SOL/point
+    const lamports = Math.max(1, Math.floor(cost * lamportsPerPoint));
+
+    const transferTx = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: serverWallet.publicKey,
+        toPubkey: recipient,
+        lamports,
+      })
+    );
+
+    const signature = await sendAndConfirmTransaction(connection, transferTx, [serverWallet], {
+      commitment: "confirmed",
+    });
+
+    const nextPoints = Math.max(0, currentPoints - cost);
+    await Promise.all([
+      UserPoints.findOneAndUpdate(
+        { userId },
+        { $set: { points: nextPoints } },
+        { new: true, upsert: true }
+      ),
+      User.updateOne(
+        { userId },
+        { $set: { points: nextPoints } },
+        { upsert: false }
+      ),
+    ]);
+
+    return res.json({
+      ok: true,
+      signature,
+      explorer: `https://explorer.solana.com/tx/${signature}?cluster=${CLUSTER}`,
+      pointsSpent: cost,
+      pointsAfter: nextPoints,
+      lamportsSent: lamports,
+      solSent: lamports / 1_000_000_000,
+    });
+  } catch (e) {
+    console.error("REDEEM ERROR:", e);
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
 // --------------------
 // AI Routes
 // --------------------
@@ -203,6 +419,19 @@ const enrichedSnapshot = {
   lastPeriodStartISO,
 };
 
+    // Write symptom signal from chat into today's cycle log.
+    // - known symptom words -> add to symptoms list
+    // - feeling text that is not a known symptom -> append to notes
+    try {
+      await persistChatSignalToTodayLog({
+        userId,
+        dateISO: snapshot?.todayISO || new Date().toISOString().slice(0, 10),
+        message,
+      });
+    } catch (logSignalErr) {
+      console.error("CYCLE CHAT LOG SIGNAL ERROR:", logSignalErr);
+    }
+
     // Hard-answer last period if asked (fast + reliable)
     const lower = String(message).toLowerCase();
     if (lower.includes("last period") || lower.includes("last cycle")) {
@@ -217,18 +446,39 @@ const enrichedSnapshot = {
       });
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-3-pro-preview" });
+    const hasGeminiKey = !!process.env.GEMINI_API_KEY;
+    const modelName = resolveGeminiModel(process.env.GEMINI_CHAT_MODEL || "gemini-2.5-flash");
 
     const prompt = `
 You are ThinkPink, a supportive cycle + nutrition assistant.
-Use ONLY the snapshot data as truth. If it’s not in the snapshot, say you don’t have enough data yet.
-No diagnosis. Keep answers 2–5 sentences, no bold.
+Use snapshot data when available, but do not block on missing data.
+If snapshot data is sparse, provide general evidence-informed guidance from widely accepted menstrual health knowledge.
+No diagnosis, no treatment claims, no emergency advice.
 
-Interpretation rules:
-- "day N of my cycle": use recentLogs where cycleDay == N. If <2 matches, say not enough data.
+WRITING STYLE:
+- Friendly, engaging, clean, and conversational.
+- Use short connected sentences (narrative flow), not rigid section labels or bullet dumps.
+- Exactly 2-3 sentences total.
+- End with one relevant check-in question tailored to the user's message.
+- Use subtle micro-empathy when data suggests a rough day (e.g., very low mood or high symptoms).
+- Mention phase names explicitly when relevant: Luteal, Follicular, Ovulation, Menstrual.
+- Light ASCII is allowed ("->", "[tip]"), but keep it minimal.
+- ASCII only. Do not use emoji.
+- For scannability, wrap the most important human details (symptoms/feelings/pattern clues) in **double asterisks**.
+- Prefer transition words to bridge ideas naturally (e.g., "interestingly", "specifically", "consequently").
+- Do not use label prefixes like "Phase:", "Pattern:", "Try today:", or "Next:".
+- Integrate guidance as soft expert advice in the paragraph flow.
+- Be straight to the point and avoid extra filler.
+- Prefer practical, safe recommendations users can try now (hydration, sleep, balanced meals, symptom tracking).
+- Do not mention lack of data, missing data, uncertainty, or that advice comes from research/studies.
+- Never say phrases like "not enough data", "limited data", "research suggests", or "evidence shows".
+
+INTERPRETATION RULES:
+- "day N of my cycle": use recentLogs where cycleDay == N. If <2 matches, give a concise general guidance answer for that day context.
 - "how do I usually feel in luteal/follicular/ovulation/menstrual": filter recentLogs by phase and summarize typical mood/energy/symptoms.
 - "what should I eat today": use todayPhase if present; otherwise give a general balanced suggestion.
 - "when was my last period": use lastPeriodStartISO.
+- If user asks a broader health question not fully covered by snapshot, answer using general evidence-informed cycle education.
 
 SNAPSHOT JSON:
 ${JSON.stringify(enrichedSnapshot, null, 2)}
@@ -237,10 +487,27 @@ USER QUESTION:
 ${message}
 `;
 
-    const result = await model.generateContent(prompt);
-    const answer = result.response.text().trim();
-   
-    res.json({ answer });
+    // Fallback path if Gemini is not configured.
+    if (!hasGeminiKey) {
+      const fallback =
+        enrichedSnapshot.lastPeriodStartISO
+          ? `I can use your logs to help with patterns. Your most recent logged period start was ${enrichedSnapshot.lastPeriodStartISO}.`
+          : "I can help summarize your logged patterns, but I need more cycle logs to answer this precisely.";
+      return res.json({ answer: fallback });
+    }
+
+    try {
+      const out = await generateWithFallbackModels(prompt, modelName);
+      const normalized = normalizeCoachParagraph(out.answer);
+      return res.json({ answer: normalized, modelUsed: out.modelUsed });
+    } catch (modelErr) {
+      console.error("CYCLE CHAT MODEL ERROR:", modelErr);
+      const fallback =
+        enrichedSnapshot.lastPeriodStartISO
+          ? `I couldn’t run the full assistant right now, but your latest logged period start is ${enrichedSnapshot.lastPeriodStartISO}.`
+          : "I couldn’t run the full assistant right now. Please try again, and make sure your cycle logs are saved.";
+      return res.json({ answer: fallback });
+    }
   } catch (e) {
     console.error("CYCLE CHAT ERROR:", e);
     res.status(500).json({ error: String(e?.message || e) });
@@ -403,6 +670,101 @@ app.post("/logs/save", async (req, res) => {
     res.status(500).json({ error: String(e?.message || e) });
   }
 });
+// server/index.js (or wherever your routes live)
+
+app.get("/geo/search", async (req, res) => {
+  try {
+    const q = String(req.query.q || "").trim();
+    if (!q || q.length < 3) return res.json({ ok: true, results: [] });
+
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    const hasCoords = Number.isFinite(lat) && Number.isFinite(lng);
+
+    const toRad = (d) => (d * Math.PI) / 180;
+    const haversineKm = (lat1, lon1, lat2, lon2) => {
+      const R = 6371;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(a));
+    };
+
+    async function nominatimSearch({ bounded }) {
+      let url =
+        `https://nominatim.openstreetmap.org/search?` +
+        `q=${encodeURIComponent(q)}` +
+        `&format=json&addressdetails=1&limit=20&countrycodes=us`;
+
+      // For short queries, bounding often kills results — don’t bound unless query is longer
+      const allowBounded = bounded && hasCoords && q.length >= 5;
+
+      if (allowBounded) {
+        const delta = 0.35; // ~35–40km-ish
+        const left = lng - delta;
+        const right = lng + delta;
+        const top = lat + delta;
+        const bottom = lat - delta;
+        url += `&viewbox=${left},${top},${right},${bottom}&bounded=1`;
+      }
+
+      const r = await fetch(url, {
+        headers: {
+          "User-Agent": "ThinkPink/1.0",
+          Accept: "application/json",
+        },
+      });
+
+      if (!r.ok) {
+        const text = await r.text();
+        throw new Error(`Geo provider error: ${text.slice(0, 200)}`);
+      }
+
+      const data = await r.json();
+      return Array.isArray(data) ? data : [];
+    }
+
+    // Pass 1: try “near me” (bounded) when possible
+    let data = await nominatimSearch({ bounded: true });
+
+    // Pass 2: if nothing, fall back to unbounded search
+    if (!data.length) {
+      data = await nominatimSearch({ bounded: false });
+    }
+
+    let results = data
+      .map((item) => {
+        const ilat = Number(item.lat);
+        const ilng = Number(item.lon);
+        const distanceKm = hasCoords ? haversineKm(lat, lng, ilat, ilng) : null;
+
+        return {
+          name: item.display_name,
+          lat: ilat,
+          lng: ilng,
+          distanceKm,
+        };
+      })
+      .filter((x) => Number.isFinite(x.lat) && Number.isFinite(x.lng));
+
+    // Always sort nearest-first if we have coords
+    if (hasCoords) {
+      results.sort((a, b) => (a.distanceKm ?? 1e9) - (b.distanceKm ?? 1e9));
+
+      // Hard-cut to “reasonable-ish” nearby results first; if none, still return the closest
+      const nearby = results.filter((x) => (x.distanceKm ?? 1e9) <= 80);
+      results = (nearby.length ? nearby : results).slice(0, 8);
+    } else {
+      results = results.slice(0, 8);
+    }
+
+    res.json({ ok: true, results: results.map(({ name, lat, lng }) => ({ name, lat, lng })) });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "Geo search failed" });
+  }
+});
 
 app.get("/logs/recent", async (req, res) => {
   try {
@@ -423,6 +785,45 @@ app.get("/logs/recent", async (req, res) => {
   }
 });
 // Autocomplete donation places near user
+app.get("/points/:userId", async (req, res) => {
+  try {
+    const userId = String(req.params.userId || "").trim();
+    if (!userId) return res.status(400).json({ error: "userId required" });
+
+    const u = await User.findOne({ userId }).lean();
+    if (!u) return res.status(404).json({ error: "user not found" });
+
+    res.json({ ok: true, points: Number(u.points || 0) });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+app.post("/points/add", async (req, res) => {
+  try {
+    const { userId, delta } = req.body || {};
+    const uid = String(userId || "").trim();
+    const inc = Number(delta);
+    if (!uid) return res.status(400).json({ error: "userId required" });
+    if (!Number.isFinite(inc)) return res.status(400).json({ error: "delta must be a number" });
+
+    const [u] = await Promise.all([
+      User.findOneAndUpdate({ userId: uid }, { $inc: { points: inc } }, { new: true }),
+      UserPoints.findOneAndUpdate({ userId: uid }, { $inc: { points: inc } }, { upsert: true, new: true }),
+    ]);
+
+    if (!u) return res.status(404).json({ error: "user not found" });
+    const points = Math.max(0, Number(u.points || 0));
+    if (points !== Number(u.points || 0)) {
+      await User.updateOne({ userId: uid }, { $set: { points } });
+      await UserPoints.updateOne({ userId: uid }, { $set: { points } });
+    }
+
+    return res.json({ ok: true, points });
+  } catch (e) {
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
+});
 app.post("/impact/places-autocomplete", async (req, res) => {
   try {
     const { query, near } = req.body; // near: { lat, lng }
@@ -484,7 +885,151 @@ app.post("/impact/place-details", async (req, res) => {
   }
 });
 
+app.get("/impact/nearby-centers", async (req, res) => {
+  try {
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ error: "lat and lng query params are required" });
+    }
+
+    const toRad = (d) => (d * Math.PI) / 180;
+    const haversineKm = (lat1, lon1, lat2, lon2) => {
+      const R = 6371;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(a));
+    };
+
+    const classifyCenterType = (name = "", types = []) => {
+      const text = `${name} ${(types || []).join(" ")}`.toLowerCase();
+      if (/(abortion|planned parenthood|reproductive health)/i.test(text)) return "abortion";
+      if (/(women|woman|obgyn|gyne|female)/i.test(text)) return "women";
+      if (/(period|menstrual|feminine hygiene|sanitary|tampon|pad|donation)/i.test(text)) return "period";
+      return "women";
+    };
+
+    const normalizePlace = (p) => {
+      const plat = Number(p?.geometry?.location?.lat);
+      const plng = Number(p?.geometry?.location?.lng);
+      if (!Number.isFinite(plat) || !Number.isFinite(plng)) return null;
+
+      return {
+        id: p.place_id,
+        name: p.name || "Health center",
+        address: p.vicinity || "",
+        lat: plat,
+        lng: plng,
+        type: classifyCenterType(p.name, p.types),
+        distanceKm: haversineKm(lat, lng, plat, plng),
+      };
+    };
+
+    const seenIds = new Set();
+    const places = [];
+
+    if (process.env.PLACES_API_KEY) {
+      const radius = 25000;
+      const queries = [
+        "period product donation center",
+        "women's health clinic",
+        "abortion clinic",
+      ];
+
+      for (const keyword of queries) {
+        const url =
+          `https://maps.googleapis.com/maps/api/place/nearbysearch/json` +
+          `?location=${lat},${lng}` +
+          `&radius=${radius}` +
+          `&keyword=${encodeURIComponent(keyword)}` +
+          `&key=${process.env.PLACES_API_KEY}`;
+
+        const r = await fetch(url);
+        if (!r.ok) continue;
+        const data = await r.json();
+        const rows = Array.isArray(data?.results) ? data.results : [];
+
+        for (const row of rows) {
+          const normalized = normalizePlace(row);
+          if (!normalized) continue;
+          if (seenIds.has(normalized.id)) continue;
+          seenIds.add(normalized.id);
+          places.push(normalized);
+        }
+      }
+    }
+
+    if (places.length === 0) {
+      const fallback = await Location.find().lean();
+      for (const c of fallback) {
+        const plat = Number(c?.coordinates?.latitude);
+        const plng = Number(c?.coordinates?.longitude);
+        if (!Number.isFinite(plat) || !Number.isFinite(plng)) continue;
+
+        const distanceKm = haversineKm(lat, lng, plat, plng);
+        if (distanceKm > 80) continue;
+
+        places.push({
+          id: String(c?._id || `${plat}-${plng}`),
+          name: c?.name || "Health center",
+          address: [c?.address?.street, c?.address?.city, c?.address?.state].filter(Boolean).join(", "),
+          lat: plat,
+          lng: plng,
+          type: classifyCenterType(c?.name, c?.acceptedItems || []),
+          distanceKm,
+        });
+      }
+    }
+
+    places.sort((a, b) => a.distanceKm - b.distanceKm);
+
+    return res.json({
+      ok: true,
+      centers: places.slice(0, 30),
+    });
+  } catch (e) {
+    console.error("NEARBY CENTERS ERROR:", e);
+    return res.status(500).json({ error: e?.message || "Failed to load nearby centers" });
+  }
+});
+
 // Submit donation for approval (stores in MongoDB)
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname || ".jpg");
+    cb(null, `donation_${Date.now()}${ext}`);
+  },
+});
+
+const upload = multer({ storage });
+
+// IMPORTANT: set this in .env to your ngrok URL so clients always get the right URL
+// PUBLIC_BASE_URL=https://xxxxx.ngrok-free.dev
+function getPublicBaseUrl(req) {
+  const envBase = process.env.PUBLIC_BASE_URL;
+  if (envBase) return envBase.replace(/\/$/, "");
+  // fallback (works locally, not always perfect behind tunnels)
+  const proto = req.headers["x-forwarded-proto"] || req.protocol;
+  const host = req.headers["x-forwarded-host"] || req.get("host");
+  return `${proto}://${host}`;
+}
+
+app.post("/impact/upload", upload.single("photo"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "photo is required" });
+
+    const base = getPublicBaseUrl(req);
+    const imageUrl = `${base}/uploads/${req.file.filename}`;
+
+    res.json({ ok: true, imageUrl });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "Upload failed" });
+  }
+});
 app.post("/impact/submit-donation", async (req, res) => {
   try {
     const { userId, imageUrl, place } = req.body;
@@ -527,20 +1072,7 @@ app.get("/locations", async (req, res) => {
 // Start
 // --------------------
 connectMongo().then(() => {
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on http://0.0.0.0:${PORT}`);
-});
-});
-
-
-// -------------------------------
-// Connecting locations from Mongo
-// -------------------------------
-app.get("/locations", async (req, res) => {
-  try {
-    const locations = await Location.find();
-    res.json(locations);
-  } catch (err) {
-    res.status(500).json({ error: "Failed to fetch locations" });
-  }
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
+  });
 });
