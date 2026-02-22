@@ -468,11 +468,11 @@ export default function LearnScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#FDECEF",
+    backgroundColor: "#ffffff",
   },
   content: {
     padding: 16,
-    paddingBottom: 110,
+    paddingBottom: 60,
   },
   panel: {
     marginTop: 12,
@@ -503,34 +503,6 @@ const styles = StyleSheet.create({
     fontFamily: "Onest",
     fontSize: 16,
     lineHeight: 22,
-  },
-  startBtn: {
-    backgroundColor: "#BA5D84",
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  startBtnText: {
-    color: "#FFF",
-    fontFamily: "Onest-Bold",
-    fontSize: 20,
-  },
-  badgeCallout: {
-    backgroundColor: "#FDECEF",
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#F48FB1",
-  },
-  badgeCalloutTitle: {
-    color: "#333",
-    fontFamily: "Onest-Bold",
-    fontSize: 18,
-  },
-  badgeCalloutText: {
-    color: "#333",
-    fontFamily: "Onest",
-    fontSize: 14,
   },
   levelRow: {
     borderWidth: 1,
@@ -581,4 +553,56 @@ const styles = StyleSheet.create({
     fontFamily: "Onest-Bold",
     fontSize: 13,
   },
+
+  // ⚡ ADD THESE STYLES
+  choiceBtn: {
+    borderWidth: 1,
+    borderColor: "#F2B7CC",
+    borderRadius: 12,
+    padding: 10,
+    marginVertical: 4,
+    backgroundColor: "#FFF",
+  },
+  choiceText: {
+    fontFamily: "Onest",
+    color: "#2D2230",
+    fontSize: 14,
+  },
+  cardText: {
+    fontFamily: "Onest",
+    color: "#333",
+    fontSize: 14,
+    marginTop: 6,
+  },
+  primaryBtn: {
+    backgroundColor: "#BA5D84",
+    padding: 12,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 12,
+  },
+  primaryText: {
+    fontFamily: "Onest-Bold",
+    color: "#FFF",
+    fontSize: 16,
+  },
+  badgeCallout: {
+  backgroundColor: "#FFF3E0",
+  borderRadius: 12,
+  borderWidth: 1,
+  borderColor: "#FFB74D",
+  padding: 12,
+  marginTop: 12,
+  gap: 6,
+},
+badgeCalloutTitle: {
+  fontFamily: "Onest-Bold",
+  fontSize: 16,
+  color: "#E65100",
+},
+badgeCalloutText: {
+  fontFamily: "Onest",
+  fontSize: 14,
+  color: "#E65100",
+},
 });
