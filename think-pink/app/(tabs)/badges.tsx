@@ -1,8 +1,9 @@
 // app/(tabs)/badges.tsx
 import { useEffect, useMemo, useState } from "react";
-import { View, Text, Pressable, Linking, ScrollView, Alert } from "react-native";
+import { View, Text, Pressable, Linking, ScrollView, Alert, StyleSheet } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
+import { Image } from "react-native";
 
 import { useProgress } from "../../lib/progressContext";
 import { awardBadge } from "../../lib/solanaClient";
@@ -13,16 +14,8 @@ const KEY_WALLET = "tp_wallet_address";
 
 function BadgePill({ label, color }: { label: string; color: string }) {
   return (
-    <View
-      style={{
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-        borderRadius: 999,
-        backgroundColor: color,
-        alignSelf: "flex-start",
-      }}
-    >
-      <Text style={{ color: "#fff", fontSize: 12 }}>{label}</Text>
+    <View style={[styles.badgePill, { backgroundColor: color }]}>
+      <Text style={styles.badgePillText}>{label}</Text>
     </View>
   );
 }
@@ -79,6 +72,7 @@ export default function BadgesRewardsScreen() {
 
   const [wallet, setWallet] = useState<string>("");
   const [minting, setMinting] = useState(false);
+  const [redeemingCost, setRedeemingCost] = useState<number | null>(null);
   const [mintResult, setMintResult] = useState<any>(null);
   const [err, setErr] = useState<string>("");
   const [showRedeem, setShowRedeem] = useState(false);
@@ -86,6 +80,8 @@ export default function BadgesRewardsScreen() {
   const [loadingImpact, setLoadingImpact] = useState(false);
   const [impactLatest, setImpactLatest] = useState<Submission | null>(null);
   const [impactTx, setImpactTx] = useState<string>("");
+  const [impactCardOpen, setImpactCardOpen] = useState(false);
+  const [completedQuizLevels, setCompletedQuizLevels] = useState<number[]>([]);
 
   async function openExternal(rawUrl: string) {
     if (!rawUrl) {
@@ -112,6 +108,23 @@ export default function BadgesRewardsScreen() {
     })();
   }, []);
 
+  useEffect(() => {
+    (async () => {
+      const uid = (user as any)?.userId || (user as any)?.id;
+      if (!uid) {
+        setCompletedQuizLevels([]);
+        return;
+      }
+      const raw = await AsyncStorage.getItem(`learn:levels:${uid}`);
+      try {
+        const parsed = raw ? JSON.parse(raw) : [];
+        setCompletedQuizLevels(Array.isArray(parsed) ? parsed.filter((n) => Number.isFinite(n)) : []);
+      } catch {
+        setCompletedQuizLevels([]);
+      }
+    })();
+  }, [user]);
+
   async function refreshImpactStatus() {
     const uid = (user as any)?.userId || (user as any)?.id;
     if (!uid) {
@@ -119,16 +132,6 @@ export default function BadgesRewardsScreen() {
       setImpactTx("");
       await setImpactBadgeUnlockedLive(false);
       await setImpactBadgeMintedLive(false);
-      // 🔥 Sync server points
-        const pointsRes = await fetch(
-        `${API_BASE}/points/${encodeURIComponent(uid)}`,
-        { headers: { "ngrok-skip-browser-warning": "true" } }
-        );
-
-        const pointsData = await pointsRes.json();
-        if (pointsData?.ok) {
-        await setPointsLive(pointsData.points);
-        }
       return;
     }
 
@@ -167,29 +170,103 @@ export default function BadgesRewardsScreen() {
   }, [user]);
 
   const cycleBadgeStatus = useMemo(() => {
-    if (cycleBadgeMinted) return { label: "Minted", color: "#2E7D32" };
-    if (cycleBadgeUnlocked) return { label: "Unlocked", color: "#D81B60" };
+    if (cycleBadgeMinted) return { label: "Minted", color: "#efcfe3" };
+    if (cycleBadgeUnlocked) return { label: "Unlocked", color: "#b3dee2" };
     return { label: "Locked", color: "#8E8E8E" };
   }, [cycleBadgeUnlocked, cycleBadgeMinted]);
 
   const impactBadgeStatus = useMemo(() => {
-    if (impactBadgeMinted) return { label: "Minted", color: "#2E7D32" };
-    if (impactBadgeUnlocked) return { label: "Unlocked", color: "#D81B60" };
+    if (impactBadgeMinted) return { label: "Minted", color: "#efcfe3" };
+    if (impactBadgeUnlocked) return { label: "Unlocked", color: "#b3dee2" };
     return { label: "Locked", color: "#8E8E8E" };
   }, [impactBadgeUnlocked, impactBadgeMinted]);
 
   const statusLevel = useMemo(() => {
-    if (lifetimePoints <= 100) return { name: "Jellyfish", icon: "🪼", nextAt: 200 };
-    if (lifetimePoints <= 200) return { name: "Seahorse", icon: "🐠", nextAt: 300 };
-    if (lifetimePoints <= 300) return { name: "Manatee", icon: "🦭", nextAt: 400 };
-    if (lifetimePoints <= 400) return { name: "Stingray", icon: "🐟", nextAt: 500 };
-    return { name: "Dolphin", icon: "🐬", nextAt: null as number | null };
+    if (lifetimePoints <= 100)
+      return {
+        name: "Jellyfish",
+        icon: require("../../components/icons/jellyf.png"),
+        nextAt: 200,
+      };
+
+    if (lifetimePoints <= 200)
+      return {
+        name: "Seahorse",
+        icon: require("../../components/icons/seahorse.png"),
+        nextAt: 300,
+      };
+
+    if (lifetimePoints <= 300)
+      return {
+        name: "Manatee",
+        icon: require("../../components/icons/manatee.png"),
+        nextAt: 400,
+      };
+
+    if (lifetimePoints <= 400)
+      return {
+        name: "Stingray",
+        icon: require("../../components/icons/stingray.png"),
+        nextAt: 500,
+      };
+
+    return {
+      name: "Dolphin",
+      icon: require("../../components/icons/dolphin.png"),
+      nextAt: null as number | null,
+    };
   }, [lifetimePoints]);
+
 
   const pointsToNext = useMemo(() => {
     if (!statusLevel.nextAt) return 0;
     return Math.max(0, statusLevel.nextAt - lifetimePoints);
   }, [statusLevel, lifetimePoints]);
+
+  const quizLevel2Unlocked = completedQuizLevels.includes(2);
+  const quizLevel3Unlocked = completedQuizLevels.includes(3);
+  const quizLevel2Status = quizLevel2Unlocked
+    ? { label: "Unlocked", color: "#b3dee2" }
+    : { label: "Locked", color: "#8E8E8E" };
+  const quizLevel3Status = quizLevel3Unlocked
+    ? { label: "Unlocked", color: "#b3dee2" }
+    : { label: "Locked", color: "#8E8E8E" };
+
+  const incompleteBadges = useMemo(() => {
+    const rows: Array<{ name: string; note: string }> = [];
+    if (!cycleBadgeMinted) {
+      rows.push({
+        name: "Cycle Literacy Level 1",
+        note: cycleBadgeUnlocked ? "Unlocked, ready to mint." : "Complete the Learn quiz to unlock.",
+      });
+    }
+    if (!impactBadgeMinted) {
+      rows.push({
+        name: "Period Equity Supporter",
+        note: impactBadgeUnlocked ? "Unlocked, waiting for mint confirmation." : "Submit and get a donation approved in Impact.",
+      });
+    }
+    if (!quizLevel2Unlocked) {
+      rows.push({
+        name: "Cycle Literacy Level 2",
+        note: "Pass Level 2 quiz in Learn to unlock.",
+      });
+    }
+    if (!quizLevel3Unlocked) {
+      rows.push({
+        name: "Cycle Literacy Level 3",
+        note: "Pass Level 3 quiz in Learn to unlock.",
+      });
+    }
+    return rows;
+  }, [
+    cycleBadgeMinted,
+    cycleBadgeUnlocked,
+    impactBadgeMinted,
+    impactBadgeUnlocked,
+    quizLevel2Unlocked,
+    quizLevel3Unlocked,
+  ]);
 
   async function onMintCycleBadge() {
     setErr("");
@@ -221,7 +298,28 @@ export default function BadgesRewardsScreen() {
   }
 
   async function onQuickEarnDemo() {
-    await addPoints(25);
+    const uid = (user as any)?.userId || (user as any)?.id;
+    if (!uid) {
+      await addPoints(25);
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/points/add`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true",
+        },
+        body: JSON.stringify({ userId: uid, delta: 25 }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not add demo points");
+      await setPointsLive(Number(data?.points || points + 25));
+    } catch (e: any) {
+      setErr(e?.message || "Could not add demo points");
+    }
   }
 
   async function redeem(cost: number) {
@@ -232,9 +330,51 @@ export default function BadgesRewardsScreen() {
       setErr("Not enough points yet.");
       return;
     }
+    const uid = (user as any)?.userId || (user as any)?.id;
+    if (!uid) {
+      setErr("Log in to redeem.");
+      return;
+    }
+    if (!wallet) {
+      setErr("Add your Solana wallet in Account first.");
+      return;
+    }
 
-    await addPoints(-cost);
-    setMintResult({ signature: "demo", explorer: "", note: `Redeemed ${cost} points` });
+    setRedeemingCost(cost);
+    try {
+      const res = await fetch(`${API_BASE}/solana/redeem-points`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true",
+        },
+        body: JSON.stringify({
+          userId: uid,
+          walletAddress: wallet,
+          pointsCost: cost,
+        }),
+      });
+
+      const text = await res.text();
+      let data: any = null;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Non-JSON response (${res.status}): ${text.slice(0, 120)}`);
+      }
+      if (!res.ok) throw new Error(data?.error || `Redeem failed (${res.status})`);
+
+      await setPointsLive(Number(data?.pointsAfter ?? Math.max(0, points - cost)));
+      setMintResult({
+        signature: data.signature,
+        explorer: data.explorer,
+        note: `Redeemed ${cost} points -> sent ${Number(data?.solSent || 0).toFixed(6)} SOL (devnet)`,
+      });
+    } catch (e: any) {
+      setErr(e?.message || "Redeem failed");
+    } finally {
+      setRedeemingCost(null);
+    }
   }
 
   const impactSubtitle = useMemo(() => {
@@ -251,237 +391,198 @@ export default function BadgesRewardsScreen() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: "#FDECEF" }}
-      contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 110 }}
+      style={styles.screen}
+      contentContainerStyle={styles.content}
     >
-      <View
-        style={{
-          backgroundColor: "#FFF",
-          padding: 16,
-          borderRadius: 20,
-          gap: 8,
-          borderWidth: 1,
-          borderColor: "#F48FB1",
-          alignItems: "center",
-        }}
-      >
-        <Text style={{ fontSize: 36 }}>{statusLevel.icon}</Text>
-        <Text style={{ color: "#333", fontSize: 20 }}>Status: {statusLevel.name}</Text>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
-          <Text style={{ color: "#D81B60", fontSize: 16 }}>Lifetime points: {lifetimePoints}</Text>
-          <Text style={{ color: "#555", fontSize: 13 }}>
+      <View style={[styles.card, styles.statusCard]}>
+        <Image source={statusLevel.icon} style={styles.statusIcon} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.statusTitle}>Status: {statusLevel.name}</Text>
+          <View style={styles.statusRow}>
+            <Text style={styles.lifetimePoints}>Lifetime points: {lifetimePoints}</Text>
+            <Text style={styles.pointsToNext}>
             {statusLevel.nextAt ? `${pointsToNext} points until next level` : "Max level reached"}
           </Text>
         </View>
+        </View>
       </View>
 
-      <View
-        style={{
-          backgroundColor: "#FFF",
-          padding: 16,
-          borderRadius: 20,
-          gap: 10,
-          borderWidth: 1,
-          borderColor: "#F48FB1",
-        }}
-      >
-        <Text style={{ color: "#333" }}>Your impact balance</Text>
-        <Text style={{ color: "#D81B60", fontSize: 28 }}>{points} PNK points</Text>
-        <Text style={{ color: "#555" }}>Earn points by passing quizzes and logging impact.</Text>
+      <View style={styles.card}>
+        <Text style={styles.sectionLabel}>Your impact balance</Text>
+        <Text style={styles.balanceText}>{points} PNK points</Text>
+        <Text style={styles.subText}>Earn points by passing quizzes and logging impact.</Text>
 
-        <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
+        <View style={styles.rowWrap}>
           <Pressable
             onPress={() => setShowRedeem((s) => !s)}
-            style={{
-              backgroundColor: "#fff",
-              borderRadius: 999,
-              paddingVertical: 10,
-              paddingHorizontal: 14,
-            }}
+            style={styles.secondaryPillBtn}
           >
-            <Text style={{ color: "#333" }}>{showRedeem ? "Hide rewards" : "Redeem rewards"}</Text>
+            <Text style={styles.secondaryPillBtnText}>{showRedeem ? "Hide rewards" : "Redeem rewards"}</Text>
           </Pressable>
 
-          <Pressable
-            onPress={onQuickEarnDemo}
-            style={{
-              backgroundColor: "#D81B60",
-              borderRadius: 999,
-              paddingVertical: 10,
-              paddingHorizontal: 14,
-            }}
-          >
-            <Text style={{ color: "#FFF" }}>Demo: +25 points</Text>
+          <Pressable onPress={onQuickEarnDemo} style={styles.primaryPillBtn}>
+            <Text style={styles.primaryPillBtnText}>Demo: +25 points</Text>
           </Pressable>
         </View>
       </View>
 
       <View style={{ gap: 12 }}>
         {/* Cycle badge */}
-        <View style={{ backgroundColor: "#FFF", padding: 16, borderRadius: 20, gap: 10 }}>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-            <Text style={{ color: "#333", fontSize: 16 }}>Cycle Literacy Level 1</Text>
-            <BadgePill label={cycleBadgeStatus.label} color={cycleBadgeStatus.color} />
+        {cycleBadgeUnlocked || cycleBadgeMinted ? (
+          <View style={[styles.card, styles.badgeCardBlue]}>
+            <View style={styles.headerRow}>
+              <Text style={styles.badgeTitle}>Cycle Literacy Level 1</Text>
+              <BadgePill label={cycleBadgeStatus.label} color={cycleBadgeStatus.color} />
+            </View>
+
+            {cycleBadgeUnlocked && !cycleBadgeMinted ? (
+              <Pressable
+                onPress={onMintCycleBadge}
+                disabled={minting}
+                style={[styles.primaryBtn, minting && styles.primaryBtnDisabled]}
+              >
+                <Text style={styles.primaryBtnText}>{minting ? "Minting…" : "Mint Unlocked Badge"}</Text>
+              </Pressable>
+            ) : null}
+
+            {cycleBadgeMinted ? (
+              <View style={styles.okBox}>
+                <Text style={styles.okText}>Minted on-chain.</Text>
+              </View>
+            ) : null}
           </View>
-
-          <Text style={{ color: "#555" }}>Complete the quiz to unlock. Mint once to verify on Solana devnet.</Text>
-
-          {!wallet ? (
-            <Pressable
-              onPress={() => router.push("/account")}
-              style={{
-                backgroundColor: "#FDECEF",
-                borderRadius: 999,
-                paddingVertical: 12,
-                alignItems: "center",
-                marginTop: 4,
-              }}
-            >
-              <Text style={{ color: "#333" }}>Add wallet in Account</Text>
-            </Pressable>
-          ) : (
-            <Text style={{ color: "#777", fontSize: 12 }}>Wallet: {wallet}</Text>
-          )}
-
-          {cycleBadgeUnlocked && !cycleBadgeMinted ? (
-            <Pressable
-              onPress={onMintCycleBadge}
-              disabled={minting}
-              style={{
-                backgroundColor: minting ? "#F48FB1" : "#D81B60",
-                borderRadius: 999,
-                paddingVertical: 12,
-                alignItems: "center",
-                marginTop: 4,
-              }}
-            >
-              <Text style={{ color: "#FFF" }}>{minting ? "Minting…" : "Mint unlocked badge"}</Text>
-            </Pressable>
-          ) : null}
-
-          {!cycleBadgeUnlocked ? (
-            <View style={{ backgroundColor: "#FDECEF", padding: 12, borderRadius: 16 }}>
-              <Text style={{ color: "#333" }}>Tip: Pass the quiz in Learn to unlock.</Text>
-            </View>
-          ) : null}
-
-          {cycleBadgeMinted ? (
-            <View style={{ backgroundColor: "#E8F5E9", padding: 12, borderRadius: 16 }}>
-              <Text style={{ color: "#2E7D32" }}>Minted on-chain.</Text>
-            </View>
-          ) : null}
-        </View>
+        ) : null}
 
         {/* Impact badge */}
-        <View style={{ backgroundColor: "#FFF", padding: 16, borderRadius: 20, gap: 10 }}>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-            <Text style={{ color: "#333", fontSize: 16 }}>Period Equity Supporter</Text>
-            <BadgePill label={impactBadgeStatus.label} color={impactBadgeStatus.color} />
-          </View>
-
-          <Text style={{ color: "#555" }}>{impactSubtitle}</Text>
-
-          <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
-            <Pressable
-              onPress={() => router.push("/(tabs)/impact")}
-              style={{
-                backgroundColor: "#FDECEF",
-                borderRadius: 999,
-                paddingVertical: 10,
-                paddingHorizontal: 14,
-              }}
-            >
-              <Text style={{ color: "#333" }}>Go to Impact</Text>
+        {impactBadgeUnlocked || impactBadgeMinted ? (
+          <View style={[styles.card, styles.badgeCardBlue]}>
+            <Pressable onPress={() => setImpactCardOpen((v) => !v)} style={styles.headerRow}>
+              <Text style={styles.badgeTitle}>Period Equity Supporter</Text>
+              <BadgePill label={impactBadgeStatus.label} color={impactBadgeStatus.color} />
             </Pressable>
 
-            <Pressable
-              onPress={refreshImpactStatus}
-              style={{
-                backgroundColor: "#D81B60",
-                borderRadius: 999,
-                paddingVertical: 10,
-                paddingHorizontal: 14,
-                opacity: loadingImpact ? 0.7 : 1,
-              }}
-              disabled={loadingImpact}
-            >
-              <Text style={{ color: "#FFF" }}>{loadingImpact ? "Refreshing…" : "Refresh status"}</Text>
-            </Pressable>
+            {impactCardOpen ? (
+              <>
+                <View style={styles.rowWrap}>
+                  <Pressable onPress={() => router.push("/(tabs)/impact")} style={styles.secondaryPillBtn}>
+                    <Text style={styles.secondaryPillBtnText}>Go to Impact</Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={refreshImpactStatus}
+                    style={[styles.primaryPillBtn, loadingImpact && { opacity: 0.7 }]}
+                    disabled={loadingImpact}
+                  >
+                    <Text style={styles.primaryPillBtnText}>{loadingImpact ? "Refreshing…" : "Refresh status"}</Text>
+                  </Pressable>
+                </View>
+
+                <View style={styles.tipBox}>
+                  <Text style={styles.tipText}>
+                    {impactLatest
+                      ? `Latest: ${impactLatest.locationName || "Donation"} (${impactLatest.status})`
+                      : impactSubtitle}
+                  </Text>
+
+                  {impactLatest?.photoUrl ? (
+                    <Pressable onPress={() => openExternal(absolutePhotoUrl(impactLatest.photoUrl))}>
+                      <Text style={styles.linkText}>View uploaded photo</Text>
+                    </Pressable>
+                  ) : null}
+
+                  {impactLatest?.status === "approved" && (impactLatest.txMint || impactTx) ? (
+                    <Pressable onPress={() => openExternal(mintExplorerUrl(impactLatest.txMint || impactTx))}>
+                      <Text style={styles.linkText}>View mint tx</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              </>
+            ) : null}
           </View>
+        ) : null}
 
-          {impactLatest ? (
-            <View style={{ backgroundColor: "#FDECEF", padding: 12, borderRadius: 16, gap: 6 }}>
-              <Text style={{ color: "#333" }}>
-                Latest: {impactLatest.locationName || "Donation"} ({impactLatest.status})
-              </Text>
-
-              {impactLatest.photoUrl ? (
-                <Pressable onPress={() => openExternal(absolutePhotoUrl(impactLatest.photoUrl))}>
-                  <Text style={{ color: "#D81B60" }}>View uploaded photo</Text>
-                </Pressable>
-              ) : null}
-
-              {impactLatest.status === "approved" && (impactLatest.txMint || impactTx) ? (
-                <Pressable
-                  onPress={() => openExternal(mintExplorerUrl(impactLatest.txMint || impactTx))}
-                >
-                  <Text style={{ color: "#D81B60" }}>View mint tx</Text>
-                </Pressable>
-              ) : null}
+        {/* Quiz level 2 badge */}
+        {quizLevel2Unlocked ? (
+          <View style={[styles.card, styles.badgeCardBlue]}>
+            <View style={styles.headerRow}>
+              <Text style={styles.badgeTitle}>Cycle Literacy Level 2</Text>
+              <BadgePill label={quizLevel2Status.label} color={quizLevel2Status.color} />
             </View>
-          ) : null}
-        </View>
+            <Text style={styles.subText}>Level 2 quiz completed.</Text>
+          </View>
+        ) : null}
+
+        {/* Quiz level 3 badge */}
+        {quizLevel3Unlocked ? (
+          <View style={[styles.card, styles.badgeCardBlue]}>
+            <View style={styles.headerRow}>
+              <Text style={styles.badgeTitle}>Cycle Literacy Level 3</Text>
+              <BadgePill label={quizLevel3Status.label} color={quizLevel3Status.color} />
+            </View>
+            <Text style={styles.subText}>Level 3 quiz completed.</Text>
+          </View>
+        ) : null}
       </View>
 
+      {incompleteBadges.length > 0 ? (
+        <View style={styles.card}>
+          <Text style={styles.badgeTitle}>Incomplete badges</Text>
+          {incompleteBadges.map((item) => (
+            <View key={item.name} style={styles.incompleteRow}>
+              <Text style={styles.incompleteName}>{item.name}</Text>
+              <Text style={styles.incompleteNote}>{item.note}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
       {showRedeem ? (
-        <View style={{ backgroundColor: "#FFF", padding: 16, borderRadius: 20, gap: 10 }}>
-          <Text style={{ color: "#333", fontSize: 16 }}>Rewards</Text>
-          <Text style={{ color: "#555" }}>Redeem points for impact perks (demo mode).</Text>
+        <View style={styles.card}>
+          <Text style={styles.badgeTitle}>Rewards</Text>
+          <Text style={styles.subText}>Redeem points for real devnet payout from treasury wallet.</Text>
 
           <View style={{ gap: 10 }}>
             <Pressable
               onPress={() => redeem(100)}
-              style={{
-                backgroundColor: points >= 100 ? "#D81B60" : "#F48FB1",
-                borderRadius: 16,
-                padding: 12,
-              }}
+              disabled={redeemingCost !== null}
+              style={[styles.primaryBtn, !(points >= 100 && redeemingCost === null) && styles.primaryBtnDisabled]}
             >
-              <Text style={{ color: "#FFF" }}>Redeem 100 points: donate 1 kit (demo)</Text>
+              <Text style={styles.primaryBtnText}>
+                {redeemingCost === 100 ? "Redeeming…" : "Redeem 100 points (~0.001 SOL devnet)"}
+              </Text>
             </Pressable>
 
             <Pressable
               onPress={() => redeem(250)}
-              style={{
-                backgroundColor: points >= 250 ? "#D81B60" : "#F48FB1",
-                borderRadius: 16,
-                padding: 12,
-              }}
+              disabled={redeemingCost !== null}
+              style={[styles.primaryBtn, !(points >= 250 && redeemingCost === null) && styles.primaryBtnDisabled]}
             >
-              <Text style={{ color: "#FFF" }}>Redeem 250 points: donate 3 kits (demo)</Text>
+              <Text style={styles.primaryBtnText}>
+                {redeemingCost === 250 ? "Redeeming…" : "Redeem 250 points (~0.0025 SOL devnet)"}
+              </Text>
             </Pressable>
           </View>
         </View>
       ) : null}
 
       {err ? (
-        <View style={{ backgroundColor: "#FFF", padding: 12, borderRadius: 16 }}>
+        <View style={styles.card}>
           <Text style={{ color: "#C62828" }}>{err}</Text>
         </View>
       ) : null}
 
       {mintResult ? (
-        <View style={{ backgroundColor: "#FFF", padding: 16, borderRadius: 20, gap: 8 }}>
-          <Text style={{ color: "#333" }}>Latest</Text>
+        <View style={styles.card}>
+          <Text style={styles.badgeTitle}>Latest</Text>
 
-          {mintResult.note ? <Text style={{ color: "#333" }}>{mintResult.note}</Text> : null}
+          {mintResult.note ? <Text style={styles.subText}>{mintResult.note}</Text> : null}
 
           {mintResult.signature && mintResult.signature !== "demo" ? (
             <>
-              <Text style={{ color: "#333" }}>Tx: {mintResult.signature}</Text>
+              <Text style={styles.subText}>Tx: {mintResult.signature}</Text>
               {mintResult.explorer ? (
                 <Pressable onPress={() => Linking.openURL(mintResult.explorer)}>
-                  <Text style={{ color: "#D81B60" }}>View in Solana Explorer</Text>
+                  <Text style={styles.linkText}>View in Solana Explorer</Text>
                 </Pressable>
               ) : null}
             </>
@@ -490,7 +591,7 @@ export default function BadgesRewardsScreen() {
       ) : null}
 
       <View style={{ paddingBottom: 24 }}>
-        <Text style={{ color: "#777", fontSize: 12 }}>
+        <Text style={styles.footerNote}>
           Cycle badge minting uses your server wallet on devnet. Impact badge is minted when an admin approves the
           donation.
         </Text>
@@ -498,3 +599,94 @@ export default function BadgesRewardsScreen() {
     </ScrollView>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: "#FFF" },
+  content: {
+    flexGrow: 1,
+    padding: 25,
+    paddingTop: 40,
+    paddingBottom: 80, // ensures content stops above tab bar
+    gap: 18,
+    backgroundColor: "#fff",
+  },
+  card: {
+    backgroundColor: "#FFF",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#ea9ab2",
+    shadowColor: "#ea9ab2",
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 10,
+    padding: 16,
+    gap: 10,
+  },
+  badgeCardBlue: { backgroundColor: "#D8ECF0" },
+  statusCard: { flexDirection: "row", alignItems: "center", gap: 12 },
+  statusIcon: {
+    width: 36,
+    height: 36,
+    resizeMode: "contain",
+  },
+  statusTitle: { color: "#250921", fontFamily: "Onest-Bold", fontSize: 34 / 2 },
+  statusRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8, },
+  lifetimePoints: { color: "#BA5D84", fontFamily: "Onest-Bold", fontSize: 14 },
+  pointsToNext: { color: "#555", fontFamily: "Onest", fontSize: 12 },
+  sectionLabel: { color: "#333", fontFamily: "Onest", fontSize: 14 },
+  balanceText: { color: "#BA5D84", fontFamily: "Onest-Bold", fontSize: 30 },
+  subText: { color: "#555", fontFamily: "Onest", fontSize: 14 },
+  rowWrap: { flexDirection: "row", gap: 10, flexWrap: "wrap" },
+  badgeTitle: { color: "#250921", fontFamily: "Onest-Bold", fontSize: 16 },
+  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  incompleteRow: {
+    backgroundColor: "#FDECEF",
+    borderRadius: 12,
+    padding: 10,
+    gap: 3,
+  },
+  incompleteName: { color: "#250921", fontFamily: "Onest-Bold", fontSize: 14 },
+  incompleteNote: { color: "#555", fontFamily: "Onest", fontSize: 12 },
+  primaryBtn: {
+    backgroundColor: "#BA5D84",
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  primaryBtnDisabled: { backgroundColor: "#F48FB1" },
+  primaryBtnText: { color: "#FFF", fontFamily: "Onest-Bold", fontSize: 18 / 1.25 },
+  primaryPillBtn: {
+    backgroundColor: "#BA5D84",
+    borderRadius: 999,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  primaryPillBtnText: { color: "#FFF", fontFamily: "Onest-Bold", fontSize: 14 },
+  secondaryPillBtn: {
+    backgroundColor: "#FDECEF",
+    borderRadius: 999,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  secondaryPillBtnWide: {
+    backgroundColor: "#FDECEF",
+    borderRadius: 999,
+    paddingVertical: 12,
+    alignItems: "center",
+    marginTop: 4,
+  },
+  secondaryPillBtnText: { color: "#333", fontFamily: "Onest-Bold", fontSize: 14 },
+  tipBox: { backgroundColor: "#FDECEF", borderRadius: 16, gap: 6 },
+  tipText: { color: "#333", fontFamily: "Onest", fontSize: 14 },
+  okBox: { backgroundColor: "#E8F5E9", borderRadius: 16 },
+  okText: { color: "#2E7D32", fontFamily: "Onest-Bold", fontSize: 14 },
+  linkText: { color: "#BA5D84", fontFamily: "Onest-Bold", fontSize: 14 },
+  footerNote: { color: "#777", fontFamily: "Onest", fontSize: 12 },
+  badgePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    alignSelf: "flex-start",
+  },
+  badgePillText: { color: "#fff", fontFamily: "Onest-Bold", fontSize: 12 },
+});

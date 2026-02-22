@@ -7,7 +7,7 @@ import multer from "multer";
 import path from "path";
 import mongoose from "mongoose";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { Connection, PublicKey, Keypair, clusterApiUrl } from "@solana/web3.js";
+import { Connection, PublicKey, Keypair, clusterApiUrl, SystemProgram, Transaction, sendAndConfirmTransaction } from "@solana/web3.js";
 import { createMint, getOrCreateAssociatedTokenAccount, mintTo } from "@solana/spl-token";
 import CycleLog from "./models/CycleLog.js";
 import BadgeMint from "./models/BadgeMint.js";
@@ -17,6 +17,8 @@ import impactRoutes from "./impactRoutes.js";
 import { makeDaoRouter } from "./daoRoutes.js";
 import geoRoutes from "./geoRoutes.js";
 import User from "./models/user.js";
+import UserPoints from "./models/userPoints.js";
+import Location from "./models/Location.js";
 
 dotenv.config();
 console.log("BADGE_MINT =", process.env.BADGE_MINT);
@@ -54,6 +56,70 @@ const CHAT_SYMPTOM_RULES = [
   },
   { label: "Hot flash", patterns: [/\bhot flash(es)?\b/i, /\boverheat(ing)?\b/i, /\btoo hot\b/i] },
 ];
+
+function resolveGeminiModel(raw) {
+  const value = String(raw || "").trim().toLowerCase();
+  if (!value) return "gemini-2.5-flash";
+
+  // Friendly aliases
+  if (["flash3", "flash-3", "gemini-flash-3", "gemini 3 flash"].includes(value)) {
+    return "gemini-2.5-flash";
+  }
+  if (["flash", "fast"].includes(value)) {
+    return "gemini-2.5-flash";
+  }
+  if (["pro", "gemini-pro"].includes(value)) {
+    return "gemini-2.5-pro";
+  }
+
+  return String(raw).trim();
+}
+
+async function generateWithFallbackModels(prompt, preferredModel) {
+  const candidates = [
+    resolveGeminiModel(preferredModel),
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash-latest",
+  ];
+  const tried = new Set();
+  let lastErr = null;
+
+  for (const name of candidates) {
+    if (!name || tried.has(name)) continue;
+    tried.add(name);
+    try {
+      const model = genAI.getGenerativeModel({ model: name });
+      const result = await model.generateContent(prompt);
+      return { answer: result.response.text().trim(), modelUsed: name };
+    } catch (err) {
+      lastErr = err;
+      console.error(`CYCLE CHAT MODEL ERROR (${name}):`, err);
+    }
+  }
+
+  throw lastErr || new Error("No Gemini model succeeded");
+}
+
+function normalizeCoachParagraph(answer) {
+  const raw = String(answer || "");
+  if (!raw) return raw;
+
+  const lines = raw
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((line) => line.replace(/^(Phase|Pattern|Try today|Next|Nudge)\s*:\s*/i, "").trim());
+
+  if (lines.length === 0) return raw;
+
+  // Join into paragraph-style output. Keep one line break between major thoughts.
+  const merged = lines.join(" ");
+  return merged
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([.,!?;:])/g, "$1")
+    .trim();
+}
 
 function extractChatSymptomsAndNotes(message) {
   const text = String(message || "").trim();
@@ -254,6 +320,74 @@ app.post("/solana/award-badge", async (req, res) => {
   }
 });
 
+app.post("/solana/redeem-points", async (req, res) => {
+  try {
+    const { userId, walletAddress, pointsCost } = req.body || {};
+    const cost = Number(pointsCost);
+
+    if (!userId) return res.status(400).json({ error: "userId required" });
+    if (!walletAddress) return res.status(400).json({ error: "walletAddress required" });
+    if (!Number.isFinite(cost) || cost <= 0) return res.status(400).json({ error: "pointsCost must be > 0" });
+
+    const recipient = new PublicKey(String(walletAddress).trim());
+    const [userPointsRow, userRow] = await Promise.all([
+      UserPoints.findOne({ userId }),
+      User.findOne({ userId }).lean(),
+    ]);
+    const userPointsBalance = Number(userPointsRow?.points || 0);
+    const userBalance = Number(userRow?.points || 0);
+    const currentPoints = Math.max(userPointsBalance, userBalance);
+    if (currentPoints < cost) {
+      return res.status(400).json({
+        error: "Not enough points",
+        pointsAvailable: currentPoints,
+      });
+    }
+
+    const lamportsPerPoint = Number(process.env.REDEEM_LAMPORTS_PER_POINT || 10000); // 0.00001 SOL/point
+    const lamports = Math.max(1, Math.floor(cost * lamportsPerPoint));
+
+    const transferTx = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: serverWallet.publicKey,
+        toPubkey: recipient,
+        lamports,
+      })
+    );
+
+    const signature = await sendAndConfirmTransaction(connection, transferTx, [serverWallet], {
+      commitment: "confirmed",
+    });
+
+    const nextPoints = Math.max(0, currentPoints - cost);
+    await Promise.all([
+      UserPoints.findOneAndUpdate(
+        { userId },
+        { $set: { points: nextPoints } },
+        { new: true, upsert: true }
+      ),
+      User.updateOne(
+        { userId },
+        { $set: { points: nextPoints } },
+        { upsert: false }
+      ),
+    ]);
+
+    return res.json({
+      ok: true,
+      signature,
+      explorer: `https://explorer.solana.com/tx/${signature}?cluster=${CLUSTER}`,
+      pointsSpent: cost,
+      pointsAfter: nextPoints,
+      lamportsSent: lamports,
+      solSent: lamports / 1_000_000_000,
+    });
+  } catch (e) {
+    console.error("REDEEM ERROR:", e);
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
 // --------------------
 // AI Routes
 // --------------------
@@ -313,18 +447,38 @@ const enrichedSnapshot = {
     }
 
     const hasGeminiKey = !!process.env.GEMINI_API_KEY;
-    const modelName = process.env.GEMINI_CHAT_MODEL || "gemini-1.5-flash";
+    const modelName = resolveGeminiModel(process.env.GEMINI_CHAT_MODEL || "gemini-2.5-flash");
 
     const prompt = `
 You are ThinkPink, a supportive cycle + nutrition assistant.
-Use ONLY the snapshot data as truth. If it’s not in the snapshot, say you don’t have enough data yet.
-No diagnosis. Keep answers 2–5 sentences, no bold.
+Use snapshot data when available, but do not block on missing data.
+If snapshot data is sparse, provide general evidence-informed guidance from widely accepted menstrual health knowledge.
+No diagnosis, no treatment claims, no emergency advice.
 
-Interpretation rules:
-- "day N of my cycle": use recentLogs where cycleDay == N. If <2 matches, say not enough data.
+WRITING STYLE:
+- Friendly, engaging, clean, and conversational.
+- Use short connected sentences (narrative flow), not rigid section labels or bullet dumps.
+- Exactly 2-3 sentences total.
+- End with one relevant check-in question tailored to the user's message.
+- Use subtle micro-empathy when data suggests a rough day (e.g., very low mood or high symptoms).
+- Mention phase names explicitly when relevant: Luteal, Follicular, Ovulation, Menstrual.
+- Light ASCII is allowed ("->", "[tip]"), but keep it minimal.
+- ASCII only. Do not use emoji.
+- For scannability, wrap the most important human details (symptoms/feelings/pattern clues) in **double asterisks**.
+- Prefer transition words to bridge ideas naturally (e.g., "interestingly", "specifically", "consequently").
+- Do not use label prefixes like "Phase:", "Pattern:", "Try today:", or "Next:".
+- Integrate guidance as soft expert advice in the paragraph flow.
+- Be straight to the point and avoid extra filler.
+- Prefer practical, safe recommendations users can try now (hydration, sleep, balanced meals, symptom tracking).
+- Do not mention lack of data, missing data, uncertainty, or that advice comes from research/studies.
+- Never say phrases like "not enough data", "limited data", "research suggests", or "evidence shows".
+
+INTERPRETATION RULES:
+- "day N of my cycle": use recentLogs where cycleDay == N. If <2 matches, give a concise general guidance answer for that day context.
 - "how do I usually feel in luteal/follicular/ovulation/menstrual": filter recentLogs by phase and summarize typical mood/energy/symptoms.
 - "what should I eat today": use todayPhase if present; otherwise give a general balanced suggestion.
 - "when was my last period": use lastPeriodStartISO.
+- If user asks a broader health question not fully covered by snapshot, answer using general evidence-informed cycle education.
 
 SNAPSHOT JSON:
 ${JSON.stringify(enrichedSnapshot, null, 2)}
@@ -343,10 +497,9 @@ ${message}
     }
 
     try {
-      const model = genAI.getGenerativeModel({ model: modelName });
-      const result = await model.generateContent(prompt);
-      const answer = result.response.text().trim();
-      return res.json({ answer });
+      const out = await generateWithFallbackModels(prompt, modelName);
+      const normalized = normalizeCoachParagraph(out.answer);
+      return res.json({ answer: normalized, modelUsed: out.modelUsed });
     } catch (modelErr) {
       console.error("CYCLE CHAT MODEL ERROR:", modelErr);
       const fallback =
@@ -645,6 +798,32 @@ app.get("/points/:userId", async (req, res) => {
     res.status(500).json({ error: String(e?.message || e) });
   }
 });
+
+app.post("/points/add", async (req, res) => {
+  try {
+    const { userId, delta } = req.body || {};
+    const uid = String(userId || "").trim();
+    const inc = Number(delta);
+    if (!uid) return res.status(400).json({ error: "userId required" });
+    if (!Number.isFinite(inc)) return res.status(400).json({ error: "delta must be a number" });
+
+    const [u] = await Promise.all([
+      User.findOneAndUpdate({ userId: uid }, { $inc: { points: inc } }, { new: true }),
+      UserPoints.findOneAndUpdate({ userId: uid }, { $inc: { points: inc } }, { upsert: true, new: true }),
+    ]);
+
+    if (!u) return res.status(404).json({ error: "user not found" });
+    const points = Math.max(0, Number(u.points || 0));
+    if (points !== Number(u.points || 0)) {
+      await User.updateOne({ userId: uid }, { $set: { points } });
+      await UserPoints.updateOne({ userId: uid }, { $set: { points } });
+    }
+
+    return res.json({ ok: true, points });
+  } catch (e) {
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
+});
 app.post("/impact/places-autocomplete", async (req, res) => {
   try {
     const { query, near } = req.body; // near: { lat, lng }
@@ -703,6 +882,117 @@ app.post("/impact/place-details", async (req, res) => {
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/impact/nearby-centers", async (req, res) => {
+  try {
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ error: "lat and lng query params are required" });
+    }
+
+    const toRad = (d) => (d * Math.PI) / 180;
+    const haversineKm = (lat1, lon1, lat2, lon2) => {
+      const R = 6371;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(a));
+    };
+
+    const classifyCenterType = (name = "", types = []) => {
+      const text = `${name} ${(types || []).join(" ")}`.toLowerCase();
+      if (/(abortion|planned parenthood|reproductive health)/i.test(text)) return "abortion";
+      if (/(women|woman|obgyn|gyne|female)/i.test(text)) return "women";
+      if (/(period|menstrual|feminine hygiene|sanitary|tampon|pad|donation)/i.test(text)) return "period";
+      return "women";
+    };
+
+    const normalizePlace = (p) => {
+      const plat = Number(p?.geometry?.location?.lat);
+      const plng = Number(p?.geometry?.location?.lng);
+      if (!Number.isFinite(plat) || !Number.isFinite(plng)) return null;
+
+      return {
+        id: p.place_id,
+        name: p.name || "Health center",
+        address: p.vicinity || "",
+        lat: plat,
+        lng: plng,
+        type: classifyCenterType(p.name, p.types),
+        distanceKm: haversineKm(lat, lng, plat, plng),
+      };
+    };
+
+    const seenIds = new Set();
+    const places = [];
+
+    if (process.env.PLACES_API_KEY) {
+      const radius = 25000;
+      const queries = [
+        "period product donation center",
+        "women's health clinic",
+        "abortion clinic",
+      ];
+
+      for (const keyword of queries) {
+        const url =
+          `https://maps.googleapis.com/maps/api/place/nearbysearch/json` +
+          `?location=${lat},${lng}` +
+          `&radius=${radius}` +
+          `&keyword=${encodeURIComponent(keyword)}` +
+          `&key=${process.env.PLACES_API_KEY}`;
+
+        const r = await fetch(url);
+        if (!r.ok) continue;
+        const data = await r.json();
+        const rows = Array.isArray(data?.results) ? data.results : [];
+
+        for (const row of rows) {
+          const normalized = normalizePlace(row);
+          if (!normalized) continue;
+          if (seenIds.has(normalized.id)) continue;
+          seenIds.add(normalized.id);
+          places.push(normalized);
+        }
+      }
+    }
+
+    if (places.length === 0) {
+      const fallback = await Location.find().lean();
+      for (const c of fallback) {
+        const plat = Number(c?.coordinates?.latitude);
+        const plng = Number(c?.coordinates?.longitude);
+        if (!Number.isFinite(plat) || !Number.isFinite(plng)) continue;
+
+        const distanceKm = haversineKm(lat, lng, plat, plng);
+        if (distanceKm > 80) continue;
+
+        places.push({
+          id: String(c?._id || `${plat}-${plng}`),
+          name: c?.name || "Health center",
+          address: [c?.address?.street, c?.address?.city, c?.address?.state].filter(Boolean).join(", "),
+          lat: plat,
+          lng: plng,
+          type: classifyCenterType(c?.name, c?.acceptedItems || []),
+          distanceKm,
+        });
+      }
+    }
+
+    places.sort((a, b) => a.distanceKm - b.distanceKm);
+
+    return res.json({
+      ok: true,
+      centers: places.slice(0, 30),
+    });
+  } catch (e) {
+    console.error("NEARBY CENTERS ERROR:", e);
+    return res.status(500).json({ error: e?.message || "Failed to load nearby centers" });
   }
 });
 
@@ -782,20 +1072,7 @@ app.get("/locations", async (req, res) => {
 // Start
 // --------------------
 connectMongo().then(() => {
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on http://0.0.0.0:${PORT}`);
-});
-});
-
-
-// -------------------------------
-// Connecting locations from Mongo
-// -------------------------------
-app.get("/locations", async (req, res) => {
-  try {
-    const locations = await Location.find();
-    res.json(locations);
-  } catch (err) {
-    res.status(500).json({ error: "Failed to fetch locations" });
-  }
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
+  });
 });

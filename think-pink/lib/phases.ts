@@ -8,7 +8,7 @@ export const phaseLabel: Record<Phase, string> = {
 };
 
 export const phaseColors: Record<Phase, { fill: string; accent: string }> = {
-  menstrual: { fill: "#F8BBD0", accent: "#D81B60" },
+  menstrual: { fill: "#F8BBD0", accent: "#BA5D84" },
   follicular: { fill: "#FDECEF", accent: "#C2185B" },
   ovulation: { fill: "#F48FB1", accent: "#AD1457" },
   luteal: { fill: "#F3D3DC", accent: "#880E4F" },

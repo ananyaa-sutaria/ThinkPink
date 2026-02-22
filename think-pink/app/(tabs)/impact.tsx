@@ -9,6 +9,7 @@ import {
   TextInput,
   ScrollView,
   Platform,
+  Linking,
 } from "react-native";
 import { useProgress } from "../../lib/progressContext";
 import * as ImagePicker from "expo-image-picker";
@@ -20,6 +21,43 @@ import type { PlaceSuggestion, PlaceDetails } from "../../lib/impactClient";
 import { submitImpact } from "../../lib/impactClient";
 import { useAuth } from "../../lib/AuthContext";
 
+type NearbyCenter = {
+  id: string;
+  name: string;
+  address?: string;
+  lat: number;
+  lng: number;
+  type?: "period" | "abortion" | "women";
+  distanceKm?: number;
+};
+
+const SUPPORT_RESOURCES = [
+  {
+    id: "dv",
+    title: "National Domestic Violence Hotline",
+    detail: "Call 800-799-7233 or chat online",
+    url: "https://www.thehotline.org/",
+  },
+  {
+    id: "pp",
+    title: "Planned Parenthood Health Center Finder",
+    detail: "Find nearby reproductive health services",
+    url: "https://www.plannedparenthood.org/health-center",
+  },
+  {
+    id: "abortionfinder",
+    title: "AbortionFinder",
+    detail: "Search trusted abortion care providers",
+    url: "https://www.abortionfinder.org/",
+  },
+  {
+    id: "reprolegal",
+    title: "Repro Legal Helpline",
+    detail: "Legal rights + confidential support",
+    url: "https://www.reprolegalhelpline.org/",
+  },
+];
+
 export default function ImpactScreen() {
   const { points, addPoints } = useProgress();
   const { user } = useAuth();
@@ -28,7 +66,7 @@ export default function ImpactScreen() {
   const [wallet, setWallet] = useState("");
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [permDenied, setPermDenied] = useState(false);
-  const [centers, setCenters] = useState<any[]>([]);
+  const [centers, setCenters] = useState<NearbyCenter[]>([]);
 
   const [photo, setPhoto] = useState<{ uri: string; name: string; type: string } | null>(null);
 
@@ -64,16 +102,17 @@ export default function ImpactScreen() {
   }, []);
 
   useEffect(() => {
+    if (!coords) return;
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/locations`, {
+        const res = await fetch(`${API_BASE}/impact/nearby-centers?lat=${coords.lat}&lng=${coords.lng}`, {
           headers: { "ngrok-skip-browser-warning": "true" },
         });
         const data = await res.json();
-        if (Array.isArray(data)) setCenters(data);
+        if (data?.ok && Array.isArray(data?.centers)) setCenters(data.centers);
       } catch {}
     })();
-  }, []);
+  }, [coords?.lat, coords?.lng]);
 
   const submitUserId = (user as any)?.userId || (user as any)?.id || deviceUserId;
 
@@ -217,8 +256,8 @@ export default function ImpactScreen() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: "#FDECEF" }}
-      contentContainerStyle={{ padding: 16, paddingTop: 24, gap: 12, paddingBottom: 110 }}
+      style={{ flex: 1, backgroundColor: "#FFF" }}
+      contentContainerStyle={styles.content}
     >
       <View style={styles.card}>
         <Text style={styles.hint}>Find menstrual product donation centers near you and log your donations here</Text>
@@ -247,8 +286,27 @@ export default function ImpactScreen() {
         <Text style={styles.primaryText}>Log a Donation</Text>
       </Pressable>
 
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>Resources</Text>
+        <Text style={styles.small}>Women-centered support and care resources</Text>
+        {SUPPORT_RESOURCES.map((resource) => (
+          <View key={resource.id} style={styles.resourceRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.resourceTitle}>{resource.title}</Text>
+              <Text style={styles.resourceDetail}>{resource.detail}</Text>
+            </View>
+            <Pressable
+              onPress={() => Linking.openURL(resource.url)}
+              style={styles.resourceBtn}
+            >
+              <Text style={styles.resourceBtnText}>Open</Text>
+            </Pressable>
+          </View>
+        ))}
+      </View>
+
       <Modal visible={donateOpen} animationType="slide" onRequestClose={() => setDonateOpen(false)}>
-        <View style={{ flex: 1, backgroundColor: "#FDECEF", padding: 16, justifyContent: "center" }}>
+        <View style={{ flexGrow: 1, backgroundColor: "#FFF", padding: 25, paddingTop: 40, paddingBottom: 80, justifyContent: "center" }}>
           <ScrollView style={{ maxHeight: "86%" }} contentContainerStyle={{ gap: 12, paddingBottom: 10 }}>
             <View style={styles.card}>
               <Text style={styles.title}>Impact</Text>
@@ -341,7 +399,7 @@ export default function ImpactScreen() {
                 style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
               >
                 <Text style={styles.sectionTitle}>My submissions</Text>
-                <Text style={{ color: "#D81B60", fontWeight: "700" }}>{submissionsOpen ? "Hide" : "Show"}</Text>
+                <Text style={{ color: "#BA5D84", fontWeight: "700" }}>{submissionsOpen ? "Hide" : "Show"}</Text>
               </Pressable>
 
               {submissionsOpen ? (
@@ -366,7 +424,7 @@ export default function ImpactScreen() {
             </View>
 
             <Pressable onPress={() => setDonateOpen(false)} style={styles.backBtn}>
-              <Text style={{ color: "#D81B60" }}>Close</Text>
+              <Text style={{ color: "#BA5D84" }}>Close</Text>
             </Pressable>
           </ScrollView>
         </View>
@@ -377,9 +435,17 @@ export default function ImpactScreen() {
 }
 
 const styles = StyleSheet.create({
+  content: {
+    flexGrow: 1,
+    padding: 25,
+    paddingTop: 40,
+    paddingBottom: 80, // ensures content stops above tab bar
+    gap: 18,
+    backgroundColor: "#fff",
+  },
   card: {
     backgroundColor: "#FFF",
-    borderRadius: 14,
+    borderRadius: 10,
     padding: 16,
     gap: 10,
     borderWidth: 1,
@@ -396,15 +462,35 @@ const styles = StyleSheet.create({
   sectionTitle: { color: "#333", fontWeight: "800" },
   primaryBtn: { backgroundColor: "#BA5D84", borderRadius: 10, paddingVertical: 12, alignItems: "center" },
   primaryText: { color: "#FFF", fontFamily: "Onest-Bold", fontSize: 20 },
-  mainCta: { marginTop: 28 },
+  mainCta: { marginTop: 6 },
   secondaryBtn: { backgroundColor: "#FDECEF", borderRadius: 999, paddingVertical: 12, alignItems: "center" },
   secondaryText: { color: "#333", fontWeight: "700" },
   small: { color: "#777", fontSize: 12 },
   input: { borderWidth: 1, borderColor: "#F48FB1", borderRadius: 12, padding: 12, backgroundColor: "#FFF" },
   resultRow: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#F3D0DB" },
   backBtn: { alignSelf: "flex-start", marginTop: 6 },
+  resourceRow: {
+    borderWidth: 1,
+    borderColor: "#F3D0DB",
+    borderRadius: 12,
+    padding: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  resourceTitle: { color: "#333", fontWeight: "700", fontSize: 13 },
+  resourceDetail: { color: "#666", fontSize: 12, marginTop: 2 },
+  resourceBtn: {
+    backgroundColor: "#FDECEF",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: "#F3D0DB",
+  },
+  resourceBtnText: { color: "#BA5D84", fontWeight: "700", fontSize: 12 },
   mapContainer: {
-    height: 180,
+    height: 220,
     borderRadius: 14,
     overflow: "hidden",
     borderWidth: 1,
@@ -424,7 +510,7 @@ const styles = StyleSheet.create({
   },
 });
 
-function NativeMap({ coords, centers }: { coords: { lat: number; lng: number }; centers: any[] }) {
+function NativeMap({ coords, centers }: { coords: { lat: number; lng: number }; centers: NearbyCenter[] }) {
   const MapStuff = useMemo(() => {
     const maps = require("react-native-maps");
     return {
@@ -442,20 +528,26 @@ function NativeMap({ coords, centers }: { coords: { lat: number; lng: number }; 
 
   const MapView = MapStuff.MapView;
   const Marker = MapStuff.Marker;
+  const pinColorFor = (type?: NearbyCenter["type"]) => {
+    if (type === "abortion") return "#8E24AA";
+    if (type === "women") return "#EC407A";
+    return "#BA5D84";
+  };
 
   return (
     <View style={styles.mapContainer}>
       <MapView style={styles.map} region={region} showsUserLocation>
         {centers.map((center, idx) => {
-          const lat = center?.coordinates?.latitude;
-          const lng = center?.coordinates?.longitude;
+          const lat = center?.lat;
+          const lng = center?.lng;
           if (typeof lat !== "number" || typeof lng !== "number") return null;
           return (
             <Marker
-              key={center?._id || `center-${idx}`}
+              key={center?.id || `center-${idx}`}
               coordinate={{ latitude: lat, longitude: lng }}
-              title={center?.name || "Donation center"}
-              description={center?.description || ""}
+              title={center?.name || "Health center"}
+              description={center?.address || ""}
+              pinColor={pinColorFor(center?.type)}
             />
           );
         })}

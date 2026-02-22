@@ -192,6 +192,7 @@ export default function LearnScreen() {
     const firstIncomplete = QUIZ_LEVELS.find((lvl) => !completedLevels.includes(lvl.id));
     return firstIncomplete?.id || QUIZ_LEVELS[QUIZ_LEVELS.length - 1].id;
   }, [completedLevels]);
+  const completedCount = completedLevels.length;
 
   async function startQuiz(levelId: number) {
     const levelMeta = QUIZ_LEVELS.find((lvl) => lvl.id === levelId);
@@ -299,9 +300,9 @@ export default function LearnScreen() {
       {!quiz ? (
         <View style={styles.panelBody}>
             <View style={styles.infoCard}>
-              <Text style={styles.infoTitle}>Daily Challenge</Text>
-              <Text style={styles.infoText}>
-                Main focus: complete today’s challenges to earn quick points.
+              <Text style={styles.infoTitle}>The Daily Focus</Text>
+              <Text style={styles.journeyLeadText}>
+                Building a cleaner picture of your cycle signals with quick daily actions.
               </Text>
 
               <View style={{ gap: 8, marginTop: 6 }}>
@@ -311,13 +312,22 @@ export default function LearnScreen() {
                     <Pressable
                       key={challenge.id}
                       onPress={() => completeDailyChallenge(challenge.id, challenge.url)}
-                      style={[styles.articleRow, done && styles.articleRowDone]}
+                      style={[styles.dailyRow, done && styles.articleRowDone]}
                     >
-                      <View style={styles.levelRowTop}>
-                        <Text style={styles.levelTitle}>{challenge.title}</Text>
-                        <Text style={styles.levelPoints}>+{DAILY_CHALLENGE_REWARD} points</Text>
+                      <View style={styles.dailyIconWrap}>
+                        <Text style={styles.dailyIcon}>{challenge.id.includes("read") ? "R" : "S"}</Text>
                       </View>
-                      <Text style={styles.levelMeta}>{challenge.summary}</Text>
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <View style={styles.levelRowTop}>
+                          <Text style={styles.dailyTitle} numberOfLines={2}>
+                            {challenge.title}
+                          </Text>
+                          <Text style={styles.levelPoints}>+{DAILY_CHALLENGE_REWARD} pts</Text>
+                        </View>
+                        <Text style={styles.levelMetaTight} numberOfLines={1}>
+                          {challenge.summary}
+                        </Text>
+                      </View>
                     </Pressable>
                   );
                 })}
@@ -325,11 +335,13 @@ export default function LearnScreen() {
             </View>
 
             <View style={styles.infoCard}>
-              <Text style={styles.infoTitle}>Quiz Levels</Text>
-              <Text style={styles.infoText}>
-                You’re at Level {nextLevel}. Pass each 5-question quiz to earn points. First pass awards points once
-                per level.
-              </Text>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                <Text style={styles.infoTitle}>Knowledge Journey</Text>
+                <View style={styles.progressChip}>
+                  <Text style={styles.progressChipText}>{completedCount}/3 complete</Text>
+                </View>
+              </View>
+              <Text style={styles.journeyLeadText}>You're at Level {nextLevel}. Pass each quiz to earn points and move forward.</Text>
 
               <View style={{ gap: 8, marginTop: 6 }}>
                 {QUIZ_LEVELS.map((lvl) => {
@@ -341,6 +353,9 @@ export default function LearnScreen() {
                       disabled={loading}
                       style={[styles.levelRow, done && styles.levelRowDone, loading && { opacity: 0.7 }]}
                     >
+                      <View style={styles.levelDotWrap}>
+                        <View style={[styles.levelDot, done && styles.levelDotDone]} />
+                      </View>
                       <View style={styles.levelRowTop}>
                         <Text style={styles.levelTitle}>
                           {lvl.title} {done ? "✓" : ""} {loading && activeLevel === lvl.id ? " (Loading…)" : ""}
@@ -354,8 +369,8 @@ export default function LearnScreen() {
             </View>
 
             <View style={styles.infoCard}>
-              <Text style={styles.infoTitle}>Articles</Text>
-              <Text style={styles.infoText}>Read and open each article to earn +{ARTICLE_REWARD} points.</Text>
+              <Text style={styles.infoTitle}>For You</Text>
+              <Text style={styles.featuredInlineText}>Pattern-based reads curated for this week</Text>
 
               <View style={{ gap: 8, marginTop: 6 }}>
                 {LEARN_ARTICLES.map((article) => {
@@ -366,9 +381,14 @@ export default function LearnScreen() {
                       onPress={() => openArticle(article.id, article.url)}
                       style={[styles.articleRow, wasRead && styles.articleRowDone]}
                     >
-                      <Text style={styles.levelTitle}>{article.title}</Text>
-                      <Text style={styles.levelMeta}>{article.summary}</Text>
-                      <Text style={styles.articleReward}>{wasRead ? "Read ✓" : `Read (+${ARTICLE_REWARD})`}</Text>
+                      <View style={styles.levelRowTop}>
+                        <Text style={styles.levelTitle}>{article.title}</Text>
+                        <Text style={styles.levelPoints}>+{ARTICLE_REWARD} pts</Text>
+                      </View>
+                      <Text style={styles.levelMetaTight} numberOfLines={1}>
+                        {article.summary}
+                      </Text>
+                      <Text style={styles.articleReward}>{wasRead ? "Completed" : "Open article"}</Text>
                     </Pressable>
                   );
                 })}
@@ -468,11 +488,15 @@ export default function LearnScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#ffffff",
+    backgroundColor: "#FFF",
   },
   content: {
-    padding: 16,
-    paddingBottom: 60,
+    flexGrow: 1,
+    padding: 25,
+    paddingTop: 50,
+    paddingBottom: 80, // ensures content stops above tab bar
+    gap: 18,
+    backgroundColor: "#fff",
   },
   panel: {
     marginTop: 12,
@@ -482,41 +506,121 @@ const styles = StyleSheet.create({
     borderColor: "#F2B7CC",
   },
   panelBody: {
-    gap: 16,
-    padding: 16,
+    gap: 25,
   },
   infoCard: {
     backgroundColor: "#FFF",
     borderWidth: 1,
-    borderColor: "#F2B7CC",
-    borderRadius: 12,
+    borderColor: "#ea9ab2",
+    borderRadius: 10,
     padding: 12,
     gap: 6,
+    shadowColor: "#ea9ab2",
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 10,
   },
   infoTitle: {
     color: "#2D2230",
     fontFamily: "Onest-Bold",
-    fontSize: 22,
+    fontSize: 36 / 2,
+  },
+  infoEyebrow: {
+    color: "#6A5A63",
+    fontFamily: "Onest-Bold",
+    fontSize: 14,
   },
   infoText: {
     color: "#2D2230",
     fontFamily: "Onest",
-    fontSize: 16,
+    fontSize: 15,
     lineHeight: 22,
   },
-  levelRow: {
-    borderWidth: 1,
-    borderColor: "#F2B7CC",
+  journeyLeadText: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: "#6A5A63",
+    fontFamily: "Onest",
+  },
+  startBtn: {
+    backgroundColor: "#BA5D84",
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  startBtnText: {
+    color: "#FFF",
+    fontFamily: "Onest-Bold",
+    fontSize: 20,
+  },
+  badgeCallout: {
+    backgroundColor: "#FDECEF",
     borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#F48FB1",
+  },
+  badgeCalloutTitle: {
+    color: "#333",
+    fontFamily: "Onest-Bold",
+    fontSize: 18,
+  },
+  badgeCalloutText: {
+    color: "#333",
+    fontFamily: "Onest",
+    fontSize: 14,
+  },
+  levelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#ea9ab2",
+    borderRadius: 10,
     padding: 10,
     gap: 4,
     backgroundColor: "#FFF",
+  },
+  dailyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#ea9ab2",
+    borderRadius: 10,
+    padding: 10,
+    gap: 8,
+    backgroundColor: "#FFF",
+  },
+  dailyIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#FDECEF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dailyIcon: {
+    fontSize: 18,
   },
   levelRowTop: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 10,
+    flex: 1,
+  },
+  levelDotWrap: {
+    marginRight: 8,
+  },
+  levelDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 99,
+    borderWidth: 1,
+    borderColor: "#BA5D84",
+    backgroundColor: "#FFF",
+  },
+  levelDotDone: {
+    backgroundColor: "#BA5D84",
   },
   levelRowDone: {
     backgroundColor: "#E8F5E9",
@@ -527,20 +631,53 @@ const styles = StyleSheet.create({
     fontFamily: "Onest-Bold",
     fontSize: 16,
   },
+  dailyTitle: {
+    flex: 1,
+    flexShrink: 1,
+    color: "#2D2230",
+    fontFamily: "Onest-Bold",
+    fontSize: 16,
+    lineHeight: 20,
+    paddingRight: 8,
+  },
   levelMeta: {
     color: "#555",
     fontFamily: "Onest",
     fontSize: 13,
+  },
+  levelMetaTight: {
+    color: "#555",
+    fontFamily: "Onest",
+    fontSize: 12,
+    lineHeight: 14,
   },
   levelPoints: {
     color: "#BA5D84",
     fontFamily: "Onest-Bold",
     fontSize: 13,
   },
+  progressChip: {
+    backgroundColor: "#F3ECF0",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  progressChipText: {
+    color: "#8E5B72",
+    fontFamily: "Onest-Bold",
+    fontSize: 12,
+  },
+  featuredInlineText: {
+    color: "#7A4A61",
+    fontFamily: "Onest-Bold",
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 2,
+  },
   articleRow: {
     borderWidth: 1,
-    borderColor: "#F2B7CC",
-    borderRadius: 12,
+    borderColor: "#ea9ab2",
+    borderRadius: 10,
     padding: 10,
     gap: 5,
     backgroundColor: "#FFF",
@@ -554,7 +691,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 
-  // ⚡ ADD THESE STYLES
   choiceBtn: {
     borderWidth: 1,
     borderColor: "#F2B7CC",
@@ -586,23 +722,4 @@ const styles = StyleSheet.create({
     color: "#FFF",
     fontSize: 16,
   },
-  badgeCallout: {
-  backgroundColor: "#FFF3E0",
-  borderRadius: 12,
-  borderWidth: 1,
-  borderColor: "#FFB74D",
-  padding: 12,
-  marginTop: 12,
-  gap: 6,
-},
-badgeCalloutTitle: {
-  fontFamily: "Onest-Bold",
-  fontSize: 16,
-  color: "#E65100",
-},
-badgeCalloutText: {
-  fontFamily: "Onest",
-  fontSize: 14,
-  color: "#E65100",
-},
 });

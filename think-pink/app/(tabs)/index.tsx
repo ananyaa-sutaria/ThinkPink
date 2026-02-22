@@ -753,7 +753,7 @@ export default function Home() {
 
       {/* Log Modal */}
       <Modal visible={logOpen} animationType="slide" onRequestClose={() => setLogOpen(false)}>
-        <View style={{ flex: 1, backgroundColor: "#FDECEF", padding: 16, gap: 12, justifyContent: "center" }}>
+        <View style={{ flex: 1, backgroundColor: "#FFF", padding: 16, gap: 12, justifyContent: "center" }}>
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Log day</Text>
             <Text style={{ color: "#555" }}>{selectedDate}</Text>
@@ -801,7 +801,7 @@ export default function Home() {
                 disabled={saving}
                 style={{
                   flex: 1,
-                  backgroundColor: saving ? "#F48FB1" : "#D81B60",
+                  backgroundColor: saving ? "#F48FB1" : "#BA5D84",
                   padding: 12,
                   borderRadius: 16,
                   alignItems: "center",
@@ -818,7 +818,7 @@ export default function Home() {
 
       {/* Medications Modal */}
       <Modal visible={medOpen} animationType="slide" onRequestClose={() => setMedOpen(false)}>
-        <View style={{ flex: 1, backgroundColor: "#FDECEF", padding: 16, gap: 12, justifyContent: "center" }}>
+        <View style={{ flex: 1, backgroundColor: "#FFF", padding: 16, gap: 12, justifyContent: "center" }}>
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Add medication</Text>
             <TextInput
@@ -854,7 +854,7 @@ export default function Home() {
 
               <Pressable
                 onPress={addMedication}
-                style={{ flex: 1, backgroundColor: "#D81B60", padding: 12, borderRadius: 16, alignItems: "center" }}
+                style={{ flex: 1, backgroundColor: "#BA5D84", padding: 12, borderRadius: 16, alignItems: "center" }}
               >
                 <Text style={{ color: "#FFF" }}>Add</Text>
               </Pressable>
@@ -892,7 +892,7 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
     padding: 25,
-    paddingTop: 40,
+    paddingTop: 50,
     paddingBottom: 80, // ensures content stops above tab bar
     gap: 18,
     backgroundColor: "#fff",
@@ -952,12 +952,13 @@ const styles = StyleSheet.create({
   phaseNote: {
     backgroundColor: "#eaf2d7",
     borderRadius: 15,
-    padding: 10,
+    paddingVertical: 7,
+    paddingHorizontal: 9,
   },
   streakBadge: {
-    minWidth: 58,
-    height: 58,
-    borderRadius: 30,
+    minWidth: 46,
+    height: 46,
+    borderRadius: 23,
     backgroundColor: "#FDECEF",
     borderWidth: 1,
     borderColor: "#F2B7CC",
@@ -967,13 +968,13 @@ const styles = StyleSheet.create({
   streakBadgeTop: {
     color: "#250921",
     fontFamily: "Onest",
-    fontSize: 10,
+    fontSize: 8,
   },
   streakBadgeNum: {
     color: "#000",
     fontFamily: "Onest-Bold",
-    fontSize: 18,
-    lineHeight: 20,
+    fontSize: 14,
+    lineHeight: 16,
   },
   streakMetaInline: {
     color: "#555",
@@ -987,7 +988,8 @@ const styles = StyleSheet.create({
   },
   noteText: {
     fontFamily: "Onest",
-    fontSize: 16,
+    fontSize: 14,
+    lineHeight: 18,
     color: "#250921",
   },
   card: {
@@ -1070,7 +1072,7 @@ const styles = StyleSheet.create({
   },
   symptomOptionActive: {
     backgroundColor: "#FDECEF",
-    borderColor: "#D81B60",
+    borderColor: "#BA5D84",
   },
   checkbox: {
     width: 16,
@@ -1081,8 +1083,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFF",
   },
   checkboxActive: {
-    backgroundColor: "#D81B60",
-    borderColor: "#D81B60",
+    backgroundColor: "#BA5D84",
+    borderColor: "#BA5D84",
   },
   symptomText: {
     color: "#333",
@@ -1110,7 +1112,7 @@ const styles = StyleSheet.create({
   },
   scheduleOptionActive: {
     backgroundColor: "#FDECEF",
-    borderColor: "#D81B60",
+    borderColor: "#BA5D84",
   },
   medItem: {
     flexDirection: "row",
@@ -1131,7 +1133,7 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
   },
   takenButtonActive: {
-    backgroundColor: "#D81B60",
+    backgroundColor: "#BA5D84",
   },
   takenButtonDone: {
     backgroundColor: "#2E7D32",

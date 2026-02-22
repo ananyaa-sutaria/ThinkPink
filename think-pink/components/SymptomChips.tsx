@@ -21,9 +21,9 @@ export default function SymptomChips({
               paddingHorizontal: 12,
               paddingVertical: 8,
               borderRadius: 999,
-              backgroundColor: isOn ? "#D81B60" : "#FFFFFF",
+              backgroundColor: isOn ? "#BA5D84" : "#FFFFFF",
               borderWidth: 1,
-              borderColor: isOn ? "#D81B60" : "#F48FB1",
+              borderColor: isOn ? "#BA5D84" : "#F48FB1",
             }}
           >
             <Text style={{ color: isOn ? "#FFFFFF" : "#333" }}>{s}</Text>
