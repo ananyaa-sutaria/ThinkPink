@@ -3,16 +3,17 @@ import { View, Text, TextInput, Pressable, StyleSheet, Alert, ScrollView, Image,
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import * as Clipboard from "expo-clipboard";
 import * as ImagePicker from "expo-image-picker";
 import { getWalletAddress, setWalletAddress } from "../lib/walletStore";
 import { useAuth } from "../lib/AuthContext";
 import { getItem, setItem } from "../lib/storage";
 import { API_BASE } from "../lib/api";
+import { useProgress } from "../lib/progressContext";
 
 export default function AccountScreen() {
   const router = useRouter();
   const { user, signOut, signIn } = useAuth?.() || ({} as any);
+  const { cycleBadgeUnlocked, cycleBadgeMinted, impactBadgeUnlocked, impactBadgeMinted } = useProgress();
 
   const [username, setUsername] = useState<string>(user?.name || "");
   const [pronouns, setPronouns] = useState<string>((user as any)?.pronouns || "");
@@ -24,6 +25,7 @@ export default function AccountScreen() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
+  const [walletOpen, setWalletOpen] = useState(false);
 
   const profilePhotoKey = `profile_photo:${(user as any)?.userId || (user as any)?.id || "guest"}`;
 
@@ -96,12 +98,6 @@ export default function AccountScreen() {
     } finally {
       setSavingProfile(false);
     }
-  }
-
-  async function onCopy() {
-    if (!wallet) return;
-    await Clipboard.setStringAsync(wallet);
-    Alert.alert("Copied", "Wallet address copied ✅");
   }
 
   async function onSignOut() {
@@ -191,6 +187,13 @@ export default function AccountScreen() {
     .map((p) => p[0]?.toUpperCase())
     .join("");
 
+  const earnedBadges = useMemo(() => {
+    const list: string[] = [];
+    if (cycleBadgeUnlocked || cycleBadgeMinted) list.push("Cycle Literacy Level 1");
+    if (impactBadgeUnlocked || impactBadgeMinted) list.push("Period Equity Supporter");
+    return list;
+  }, [cycleBadgeUnlocked, cycleBadgeMinted, impactBadgeUnlocked, impactBadgeMinted]);
+
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -209,6 +212,19 @@ export default function AccountScreen() {
           <Pressable onPress={onPickProfilePhoto} style={styles.photoBtn}>
             <Text style={styles.photoBtnText}>{profilePhotoUri ? "Change Photo" : "Upload Photo"}</Text>
           </Pressable>
+          <View style={styles.badgesWrap}>
+            {earnedBadges.length === 0 ? (
+              <Text style={styles.badgesEmpty}>No badges yet</Text>
+            ) : (
+              <View style={styles.badgePillRow}>
+                {earnedBadges.map((name) => (
+                  <View key={name} style={styles.badgePill}>
+                    <Text style={styles.badgePillText}>{name}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
         </View>
 
         <View style={styles.card}>
@@ -234,37 +250,37 @@ export default function AccountScreen() {
         </View>
 
         <View style={styles.card}>
-          <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+          <Pressable
+            onPress={() => setWalletOpen((v) => !v)}
+            style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
+          >
             <Text style={styles.label}>Solana Wallet</Text>
-            <Text style={{ color: "#D81B60", fontSize: 12, fontWeight: "700" }}>Devnet</Text>
-          </View>
+            <Text style={{ color: "#D81B60", fontSize: 12, fontWeight: "700" }}>
+              {walletOpen ? "Hide" : "Show"}
+            </Text>
+          </Pressable>
 
-          <Text style={styles.subLabel}>Paste your Phantom / Solflare wallet address:</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Your wallet address (base58)"
-            autoCapitalize="none"
-            autoCorrect={false}
-            value={wallet}
-            onChangeText={setWallet}
-          />
+          {walletOpen ? (
+            <>
+              <Text style={styles.subLabel}>Paste your Phantom / Solflare wallet address:</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Your wallet address (base58)"
+                autoCapitalize="none"
+                autoCorrect={false}
+                value={wallet}
+                onChangeText={setWallet}
+              />
 
-          <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
-            <Pressable onPress={onSaveLocal} style={[styles.smallBtn, { backgroundColor: "#D81B60" }]}>
-              <Text style={[styles.smallBtnText, { color: "#FFF" }]}>Save</Text>
-            </Pressable>
-
-            <Pressable
-              onPress={onCopy}
-              disabled={!wallet}
-              style={[styles.smallBtn, { backgroundColor: wallet ? "#FDECEF" : "#F48FB1" }]}
-            >
-              <Ionicons name="copy-outline" size={14} color="#D81B60" />
-              <Text style={[styles.smallBtnText, { color: "#D81B60" }]}>
-                {wallet ? `Copy (${shortWallet})` : "Copy"}
-              </Text>
-            </Pressable>
-          </View>
+              <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
+                <Pressable onPress={onSaveLocal} style={[styles.smallBtn, { backgroundColor: "#D81B60" }]}>
+                  <Text style={[styles.smallBtnText, { color: "#FFF" }]}>Save</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : (
+            <Text style={styles.subLabel}>{wallet ? `Saved: ${shortWallet}` : "No wallet saved"}</Text>
+          )}
         </View>
 
         <Pressable onPress={() => router.back()} style={styles.backButton}>
@@ -324,7 +340,7 @@ export default function AccountScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#FDECEF" },
+  container: { flex: 1, backgroundColor: "#FFF" },
   content: { padding: 20, paddingTop: 36, alignItems: "center", paddingBottom: 40 },
   wrap: { width: "100%", maxWidth: 520, alignItems: "center" },
   header: { fontSize: 24, fontWeight: "900", color: "#D81B60", marginBottom: 16, textAlign: "center" },
@@ -350,6 +366,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   photoBtnText: { color: "#FFF", fontWeight: "700", fontSize: 13 },
+  badgesWrap: {
+    marginTop: 6,
+    width: "100%",
+    alignItems: "center",
+    gap: 6,
+  },
+  badgesEmpty: {
+    color: "#777",
+    fontFamily: "Onest",
+    fontSize: 12,
+  },
+  badgePillRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    justifyContent: "center",
+  },
+  badgePill: {
+    backgroundColor: "#FDECEF",
+    borderWidth: 1,
+    borderColor: "#ea9ab2",
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  badgePillText: {
+    color: "#A40E4C",
+    fontFamily: "Onest-Bold",
+    fontSize: 12,
+  },
   profileSaveBtn: {
     marginTop: 14,
     backgroundColor: "#BA5D84",
@@ -369,7 +415,19 @@ const styles = StyleSheet.create({
   },
   securityBtnText: { color: "#D81B60", fontFamily: "Onest-Bold", fontSize: 16 },
 
-  card: { backgroundColor: "#FFF", borderRadius: 15, padding: 15, marginBottom: 15, width: "100%" },
+  card: {
+    backgroundColor: "#FFF",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#ea9ab2",
+    shadowColor: "#ea9ab2",
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 10,
+    padding: 15,
+    marginBottom: 15,
+    width: "100%",
+  },
   label: { fontWeight: "700", marginBottom: 6, color: "#333" },
   subLabel: { color: "#555", marginBottom: 8 },
 

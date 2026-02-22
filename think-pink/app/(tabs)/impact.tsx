@@ -217,7 +217,7 @@ export default function ImpactScreen() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: "#FDECEF" }}
+      style={{ flex: 1, backgroundColor: "#FFF" }}
       contentContainerStyle={{ padding: 16, paddingTop: 24, gap: 12, paddingBottom: 110 }}
     >
       <View style={styles.card}>
@@ -248,7 +248,7 @@ export default function ImpactScreen() {
       </Pressable>
 
       <Modal visible={donateOpen} animationType="slide" onRequestClose={() => setDonateOpen(false)}>
-        <View style={{ flex: 1, backgroundColor: "#FDECEF", padding: 16, justifyContent: "center" }}>
+        <View style={{ flex: 1, backgroundColor: "#FFF", padding: 16, justifyContent: "center" }}>
           <ScrollView style={{ maxHeight: "86%" }} contentContainerStyle={{ gap: 12, paddingBottom: 10 }}>
             <View style={styles.card}>
               <Text style={styles.title}>Impact</Text>
@@ -379,7 +379,7 @@ export default function ImpactScreen() {
 const styles = StyleSheet.create({
   card: {
     backgroundColor: "#FFF",
-    borderRadius: 14,
+    borderRadius: 10,
     padding: 16,
     gap: 10,
     borderWidth: 1,

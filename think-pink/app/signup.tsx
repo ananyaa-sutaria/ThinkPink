@@ -73,7 +73,7 @@ export default function SignUpScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, justifyContent: 'center', padding: 30, backgroundColor: "#FDECEF" },
+  container: { flexGrow: 1, justifyContent: 'center', padding: 30, backgroundColor: "#FFF" },
   title: { fontSize: 32, fontWeight: "900", color: "#D81B60", marginBottom: 30, textAlign: 'center' },
   input: { backgroundColor: "#FFF", borderWidth: 1, borderColor: "#F48FB1", borderRadius: 15, padding: 15, marginBottom: 15 },
   button: { backgroundColor: "#D81B60", padding: 20, borderRadius: 99, alignItems: "center", marginTop: 10 },

@@ -15,6 +15,47 @@ import { buildUserSnapshot } from "../../lib/userSnaphot";
 
 type Msg = { id: string; role: "user" | "assistant"; text: string };
 
+const PHASE_WORDS = new Set(["luteal", "menstrual", "follicular", "ovulation"]);
+
+function renderHighlightedInline(text: string, baseStyle: any) {
+  const source = String(text || "");
+  const boldSplit = source.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
+
+  return (
+    <Text style={baseStyle}>
+      {boldSplit.map((segment, i) => {
+        const isMarkedBold = /^\*\*[^*]+\*\*$/.test(segment);
+        const clean = isMarkedBold ? segment.slice(2, -2) : segment;
+        const words = clean.split(/(\s+)/);
+        return words.map((word, j) => {
+          const normalized = word.replace(/[^a-z]/gi, "").toLowerCase();
+          const isPhaseWord = PHASE_WORDS.has(normalized);
+          const key = `seg_${i}_w_${j}`;
+          if (isMarkedBold) {
+            return (
+              <Text key={key} style={styles.emphasisWord}>
+                {word}
+              </Text>
+            );
+          }
+          if (isPhaseWord) {
+            return (
+              <Text key={key} style={styles.phaseWord}>
+                {word}
+              </Text>
+            );
+          }
+          return <Text key={key}>{word}</Text>;
+        });
+      })}
+    </Text>
+  );
+}
+
+function renderAssistantRichText(text: string) {
+  return renderHighlightedInline(String(text || "").trim(), styles.assistantText);
+}
+
 
 export default function LogChatScreen() {
   const [messages, setMessages] = useState<Msg[]>([
@@ -72,7 +113,7 @@ export default function LogChatScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: "#FDECEF" }}
+      style={{ flex: 1, backgroundColor: "#FFF" }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <View style={styles.container}>
@@ -102,10 +143,14 @@ export default function LogChatScreen() {
                 borderColor: m.role === "user" ? "#BFD4DA" : "#D8DFC4",
                 paddingVertical: 10,
                 paddingHorizontal: 12,
-                maxWidth: "85%",
+                maxWidth: m.role === "assistant" ? "92%" : "85%",
               }}
             >
-              <Text style={{ color: "#333", fontSize: 15, lineHeight: 21 }}>{m.text}</Text>
+              {m.role === "assistant" ? (
+                renderAssistantRichText(m.text)
+              ) : (
+                <Text style={{ color: "#333", fontSize: 15, lineHeight: 21 }}>{m.text}</Text>
+              )}
             </View>
           ))}
 
@@ -158,7 +203,7 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 8,
     shadowColor: "#EA9AB2",
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.35,
     shadowRadius: 8,
     elevation: 6,
   },
@@ -176,6 +221,20 @@ const styles = StyleSheet.create({
   },
   helperDisclaimerBold: {
     color: "#333",
+    fontFamily: "Onest-Bold",
+  },
+  assistantText: {
+    color: "#333",
+    fontSize: 15.5,
+    lineHeight: 24,
+    fontFamily: "Onest",
+  },
+  emphasisWord: {
+    color: "#C7547F",
+    fontFamily: "Onest-Bold",
+  },
+  phaseWord: {
+    color: "#C7547F",
     fontFamily: "Onest-Bold",
   },
   chatList: {

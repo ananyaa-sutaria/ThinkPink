@@ -7,7 +7,7 @@ import multer from "multer";
 import path from "path";
 import mongoose from "mongoose";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { Connection, PublicKey, Keypair, clusterApiUrl } from "@solana/web3.js";
+import { Connection, PublicKey, Keypair, clusterApiUrl, SystemProgram, Transaction, sendAndConfirmTransaction } from "@solana/web3.js";
 import { createMint, getOrCreateAssociatedTokenAccount, mintTo } from "@solana/spl-token";
 import CycleLog from "./models/CycleLog.js";
 import BadgeMint from "./models/BadgeMint.js";
@@ -17,6 +17,7 @@ import impactRoutes from "./impactRoutes.js";
 import { makeDaoRouter } from "./daoRoutes.js";
 import geoRoutes from "./geoRoutes.js";
 import User from "./models/user.js";
+import UserPoints from "./models/userPoints.js";
 
 dotenv.config();
 console.log("BADGE_MINT =", process.env.BADGE_MINT);
@@ -54,6 +55,70 @@ const CHAT_SYMPTOM_RULES = [
   },
   { label: "Hot flash", patterns: [/\bhot flash(es)?\b/i, /\boverheat(ing)?\b/i, /\btoo hot\b/i] },
 ];
+
+function resolveGeminiModel(raw) {
+  const value = String(raw || "").trim().toLowerCase();
+  if (!value) return "gemini-2.5-flash";
+
+  // Friendly aliases
+  if (["flash3", "flash-3", "gemini-flash-3", "gemini 3 flash"].includes(value)) {
+    return "gemini-2.5-flash";
+  }
+  if (["flash", "fast"].includes(value)) {
+    return "gemini-2.5-flash";
+  }
+  if (["pro", "gemini-pro"].includes(value)) {
+    return "gemini-2.5-pro";
+  }
+
+  return String(raw).trim();
+}
+
+async function generateWithFallbackModels(prompt, preferredModel) {
+  const candidates = [
+    resolveGeminiModel(preferredModel),
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash-latest",
+  ];
+  const tried = new Set();
+  let lastErr = null;
+
+  for (const name of candidates) {
+    if (!name || tried.has(name)) continue;
+    tried.add(name);
+    try {
+      const model = genAI.getGenerativeModel({ model: name });
+      const result = await model.generateContent(prompt);
+      return { answer: result.response.text().trim(), modelUsed: name };
+    } catch (err) {
+      lastErr = err;
+      console.error(`CYCLE CHAT MODEL ERROR (${name}):`, err);
+    }
+  }
+
+  throw lastErr || new Error("No Gemini model succeeded");
+}
+
+function normalizeCoachParagraph(answer) {
+  const raw = String(answer || "");
+  if (!raw) return raw;
+
+  const lines = raw
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((line) => line.replace(/^(Phase|Pattern|Try today|Next|Nudge)\s*:\s*/i, "").trim());
+
+  if (lines.length === 0) return raw;
+
+  // Join into paragraph-style output. Keep one line break between major thoughts.
+  const merged = lines.join(" ");
+  return merged
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([.,!?;:])/g, "$1")
+    .trim();
+}
 
 function extractChatSymptomsAndNotes(message) {
   const text = String(message || "").trim();
@@ -254,6 +319,65 @@ app.post("/solana/award-badge", async (req, res) => {
   }
 });
 
+app.post("/solana/redeem-points", async (req, res) => {
+  try {
+    const { userId, walletAddress, pointsCost } = req.body || {};
+    const cost = Number(pointsCost);
+
+    if (!userId) return res.status(400).json({ error: "userId required" });
+    if (!walletAddress) return res.status(400).json({ error: "walletAddress required" });
+    if (!Number.isFinite(cost) || cost <= 0) return res.status(400).json({ error: "pointsCost must be > 0" });
+
+    const recipient = new PublicKey(String(walletAddress).trim());
+    const row = await UserPoints.findOne({ userId });
+    const currentPoints = Number(row?.points || 0);
+    if (currentPoints < cost) {
+      return res.status(400).json({ error: "Not enough points" });
+    }
+
+    const lamportsPerPoint = Number(process.env.REDEEM_LAMPORTS_PER_POINT || 10000); // 0.00001 SOL/point
+    const lamports = Math.max(1, Math.floor(cost * lamportsPerPoint));
+
+    const transferTx = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: serverWallet.publicKey,
+        toPubkey: recipient,
+        lamports,
+      })
+    );
+
+    const signature = await sendAndConfirmTransaction(connection, transferTx, [serverWallet], {
+      commitment: "confirmed",
+    });
+
+    const after = await UserPoints.findOneAndUpdate(
+      { userId, points: { $gte: cost } },
+      { $inc: { points: -cost } },
+      { new: true }
+    );
+
+    if (!after) {
+      return res.status(409).json({ error: "Points changed during redemption. Try again." });
+    }
+
+    // Keep User.points roughly in sync where it exists.
+    await User.updateOne({ userId }, { $inc: { points: -cost } });
+
+    return res.json({
+      ok: true,
+      signature,
+      explorer: `https://explorer.solana.com/tx/${signature}?cluster=${CLUSTER}`,
+      pointsSpent: cost,
+      pointsAfter: Number(after.points || 0),
+      lamportsSent: lamports,
+      solSent: lamports / 1_000_000_000,
+    });
+  } catch (e) {
+    console.error("REDEEM ERROR:", e);
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
 // --------------------
 // AI Routes
 // --------------------
@@ -313,14 +437,29 @@ const enrichedSnapshot = {
     }
 
     const hasGeminiKey = !!process.env.GEMINI_API_KEY;
-    const modelName = process.env.GEMINI_CHAT_MODEL || "gemini-1.5-flash";
+    const modelName = resolveGeminiModel(process.env.GEMINI_CHAT_MODEL || "gemini-2.5-flash");
 
     const prompt = `
 You are ThinkPink, a supportive cycle + nutrition assistant.
-Use ONLY the snapshot data as truth. If it’s not in the snapshot, say you don’t have enough data yet.
-No diagnosis. Keep answers 2–5 sentences, no bold.
+Use ONLY snapshot data as truth. If data is missing, say exactly what is missing and one simple next step.
+No diagnosis, no treatment claims, no emergency advice.
 
-Interpretation rules:
+WRITING STYLE:
+- Friendly, engaging, clean, and conversational.
+- Use short connected sentences (narrative flow), not rigid section labels or bullet dumps.
+- Exactly 2-3 sentences total.
+- End with one relevant check-in question tailored to the user's message.
+- Use subtle micro-empathy when data suggests a rough day (e.g., very low mood or high symptoms).
+- Mention phase names explicitly when relevant: Luteal, Follicular, Ovulation, Menstrual.
+- Light ASCII is allowed ("->", "[tip]"), but keep it minimal.
+- ASCII only. Do not use emoji.
+- For scannability, wrap the most important human details (symptoms/feelings/pattern clues) in **double asterisks**.
+- Prefer transition words to bridge ideas naturally (e.g., "interestingly", "specifically", "consequently").
+- Do not use label prefixes like "Phase:", "Pattern:", "Try today:", or "Next:".
+- Integrate guidance as soft expert advice in the paragraph flow.
+- Be straight to the point and avoid extra filler.
+
+INTERPRETATION RULES:
 - "day N of my cycle": use recentLogs where cycleDay == N. If <2 matches, say not enough data.
 - "how do I usually feel in luteal/follicular/ovulation/menstrual": filter recentLogs by phase and summarize typical mood/energy/symptoms.
 - "what should I eat today": use todayPhase if present; otherwise give a general balanced suggestion.
@@ -343,10 +482,9 @@ ${message}
     }
 
     try {
-      const model = genAI.getGenerativeModel({ model: modelName });
-      const result = await model.generateContent(prompt);
-      const answer = result.response.text().trim();
-      return res.json({ answer });
+      const out = await generateWithFallbackModels(prompt, modelName);
+      const normalized = normalizeCoachParagraph(out.answer);
+      return res.json({ answer: normalized, modelUsed: out.modelUsed });
     } catch (modelErr) {
       console.error("CYCLE CHAT MODEL ERROR:", modelErr);
       const fallback =

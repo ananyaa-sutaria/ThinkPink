@@ -503,7 +503,7 @@ export default function LearnScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#FDECEF",
+    backgroundColor: "#FFF",
   },
   content: {
     padding: 16,
@@ -523,10 +523,14 @@ const styles = StyleSheet.create({
   infoCard: {
     backgroundColor: "#FFF",
     borderWidth: 1,
-    borderColor: "#F2B7CC",
-    borderRadius: 12,
+    borderColor: "#ea9ab2",
+    borderRadius: 10,
     padding: 12,
     gap: 6,
+    shadowColor: "#ea9ab2",
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 10,
   },
   infoTitle: {
     color: "#2D2230",
@@ -569,8 +573,8 @@ const styles = StyleSheet.create({
   },
   levelRow: {
     borderWidth: 1,
-    borderColor: "#F2B7CC",
-    borderRadius: 12,
+    borderColor: "#ea9ab2",
+    borderRadius: 10,
     padding: 10,
     gap: 4,
     backgroundColor: "#FFF",
@@ -602,8 +606,8 @@ const styles = StyleSheet.create({
   },
   articleRow: {
     borderWidth: 1,
-    borderColor: "#F2B7CC",
-    borderRadius: 12,
+    borderColor: "#ea9ab2",
+    borderRadius: 10,
     padding: 10,
     gap: 5,
     backgroundColor: "#FFF",
