@@ -13,6 +13,8 @@ import {
 
   getPoints,
   setPoints,
+  getLifetimePoints,
+  setLifetimePoints,
 } from "./progressStore";
 
 type ProgressContextValue = {
@@ -23,6 +25,7 @@ type ProgressContextValue = {
   impactBadgeMinted: boolean;
 
   points: number;
+  lifetimePoints: number;
 
   setCycleBadgeUnlockedLive: (v: boolean) => Promise<void>;
   setCycleBadgeMintedLive: (v: boolean) => Promise<void>;
@@ -32,6 +35,7 @@ type ProgressContextValue = {
 
   addPoints: (delta: number) => Promise<void>;
   setPointsLive: (n: number) => Promise<void>;
+  setLifetimePointsLive: (n: number) => Promise<void>;
 
   refresh: () => Promise<void>;
 };
@@ -46,14 +50,16 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
   const [impactBadgeMintedState, setImpactBadgeMintedState] = useState(false);
 
   const [pointsState, setPointsState] = useState(0);
+  const [lifetimePointsState, setLifetimePointsState] = useState(0);
 
   async function refresh() {
-    const [cu, cm, iu, im, p] = await Promise.all([
+    const [cu, cm, iu, im, p, lp] = await Promise.all([
       getCycleBadgeUnlocked(),
       getCycleBadgeMinted(),
       getImpactBadgeUnlocked(),
       getImpactBadgeMinted(),
       getPoints(),
+      getLifetimePoints(),
     ]);
 
     setCycleBadgeUnlockedState(cu);
@@ -63,6 +69,7 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
     setImpactBadgeMintedState(im);
 
     setPointsState(p);
+    setLifetimePointsState(Math.max(lp, p));
   }
 
   async function setCycleBadgeUnlockedLive(v: boolean) {
@@ -89,12 +96,27 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
     const fixed = Math.max(0, Math.floor(n));
     setPointsState(fixed);
     await setPoints(fixed);
+    if (fixed > lifetimePointsState) {
+      setLifetimePointsState(fixed);
+      await setLifetimePoints(fixed);
+    }
+  }
+
+  async function setLifetimePointsLive(n: number) {
+    const fixed = Math.max(0, Math.floor(n));
+    setLifetimePointsState(fixed);
+    await setLifetimePoints(fixed);
   }
 
   async function addPoints(delta: number) {
     const next = Math.max(0, Math.floor(pointsState + delta));
     setPointsState(next);
     await setPoints(next);
+    if (delta > 0) {
+      const nextLifetime = Math.max(lifetimePointsState, next);
+      setLifetimePointsState(nextLifetime);
+      await setLifetimePoints(nextLifetime);
+    }
   }
 
   useEffect(() => {
@@ -110,6 +132,7 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
       impactBadgeMinted: impactBadgeMintedState,
 
       points: pointsState,
+      lifetimePoints: lifetimePointsState,
 
       setCycleBadgeUnlockedLive,
       setCycleBadgeMintedLive,
@@ -118,6 +141,7 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
 
       addPoints,
       setPointsLive,
+      setLifetimePointsLive,
       refresh,
     }),
     [
@@ -126,6 +150,7 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
       impactBadgeUnlockedState,
       impactBadgeMintedState,
       pointsState,
+      lifetimePointsState,
     ]
   );
 

@@ -85,12 +85,12 @@ async function awardBadgeToWallet(walletAddress) {
 // --------------------
 app.post("/api/users/signup", async (req, res) => {
   try {
-    const { username, password, wallet } = req.body;
+    const { username, password, wallet, pronouns } = req.body;
     const existing = await User.findOne({ name: username });
     if (existing) return res.status(400).json({ error: "Username exists" });
 
     const userId = `${username.toLowerCase().replace(/\s/g, "_")}_${Math.floor(100 + Math.random() * 900)}`;
-    const newUser = new User({ userId, name: username, password, wallet: wallet || "" });
+    const newUser = new User({ userId, name: username, pronouns: pronouns || "", password, wallet: wallet || "" });
     await newUser.save();
     res.json(newUser);
   } catch (err) {
@@ -112,19 +112,20 @@ app.post("/api/users/signin", async (req, res) => {
 // server/index.js
 app.post("/api/users/change-password", async (req, res) => {
   try {
-    const { userId, newPassword } = req.body;
+    const { userId, currentPassword, newPassword } = req.body;
 
-    if (!userId || !newPassword) {
-      return res.status(400).json({ error: "userId and newPassword are required" });
+    if (!userId || !currentPassword || !newPassword) {
+      return res.status(400).json({ error: "userId, currentPassword and newPassword are required" });
     }
 
-    const updated = await User.findOneAndUpdate(
-      { userId },
-      { $set: { password: newPassword } },
-      { new: true }
-    );
+    const existing = await User.findOne({ userId });
+    if (!existing) return res.status(404).json({ error: "User not found" });
+    if (existing.password !== currentPassword) {
+      return res.status(401).json({ error: "Current password is incorrect" });
+    }
 
-    if (!updated) return res.status(404).json({ error: "User not found" });
+    existing.password = newPassword;
+    await existing.save();
 
     res.json({ ok: true, message: "Password updated successfully" });
   } catch (err) {
@@ -135,15 +136,21 @@ app.post("/api/users/change-password", async (req, res) => {
 
 app.post("/api/users/sync", async (req, res) => {
   try {
-    const { userId, name, wallet, password } = req.body;
+    const { userId, name, wallet, password, pronouns } = req.body;
 
     if (!userId) {
       return res.status(400).json({ error: "userId is required" });
     }
 
+    const updates = {};
+    if (name !== undefined) updates.name = name;
+    if (wallet !== undefined) updates.wallet = wallet;
+    if (pronouns !== undefined) updates.pronouns = pronouns;
+    if (password !== undefined && String(password).length > 0) updates.password = password;
+
     const updatedUser = await User.findOneAndUpdate(
       { userId },
-      { $set: { name, wallet, password } },
+      { $set: updates },
       { new: true }
     );
 

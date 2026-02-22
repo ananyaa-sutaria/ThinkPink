@@ -69,7 +69,10 @@ export default function LogChatScreen() {
         <View style={{ backgroundColor: "#FFF", borderRadius: 20, padding: 16, gap: 6 }}>
           <Text style={{ color: "#333", fontSize: 18, fontWeight: "800" }}>Ask ThinkPink</Text>
           <Text style={{ color: "#555" }}>
-            Personalized answers based on your cycle logs. No diagnosis — just insights.
+            <Text style={{ fontWeight: "800", color: "#333" }}>
+              We do not offer medical advice.
+            </Text>{" "}
+            We provide a comprehensive study of your data to help you prepare for conversations with healthcare providers.
           </Text>
         </View>
 

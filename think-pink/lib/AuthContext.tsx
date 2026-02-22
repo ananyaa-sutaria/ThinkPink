@@ -5,6 +5,7 @@ interface User {
   userId: string;
   name: string;
   wallet?: string;
+  pronouns?: string;
 }
 
 interface AuthContextType {
@@ -42,6 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           userId: userData.userId,
           name: userData.name,
           wallet: userData.wallet || "",
+          pronouns: userData.pronouns || "",
         }),
       });
 
