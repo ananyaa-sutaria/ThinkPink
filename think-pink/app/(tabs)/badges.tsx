@@ -364,10 +364,6 @@ export default function BadgesRewardsScreen() {
       style={styles.screen}
       contentContainerStyle={styles.content}
     >
-      <View style={styles.card}>
-        <Text style={styles.hint}>Earn credentials for learning and impact. Later, mint on Solana devnet.</Text>
-      </View>
-
       <View style={[styles.card, styles.statusCard]}>
         <Text style={styles.statusIcon}>{statusLevel.icon}</Text>
         <View style={{ flex: 1 }}>
@@ -590,7 +586,6 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   badgeCardBlue: { backgroundColor: "#D8ECF0" },
-  hint: { color: "#333", fontFamily: "Onest", fontSize: 24 / 2 },
   statusCard: { flexDirection: "row", alignItems: "center", gap: 12 },
   statusIcon: { fontSize: 36 },
   statusTitle: { color: "#250921", fontFamily: "Onest-Bold", fontSize: 34 / 2 },
