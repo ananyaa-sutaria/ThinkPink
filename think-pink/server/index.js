@@ -18,6 +18,7 @@ import { makeDaoRouter } from "./daoRoutes.js";
 import geoRoutes from "./geoRoutes.js";
 import User from "./models/user.js";
 import UserPoints from "./models/userPoints.js";
+import Location from "./models/Location.js";
 
 dotenv.config();
 console.log("BADGE_MINT =", process.env.BADGE_MINT);
@@ -849,6 +850,117 @@ app.post("/impact/place-details", async (req, res) => {
   }
 });
 
+app.get("/impact/nearby-centers", async (req, res) => {
+  try {
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ error: "lat and lng query params are required" });
+    }
+
+    const toRad = (d) => (d * Math.PI) / 180;
+    const haversineKm = (lat1, lon1, lat2, lon2) => {
+      const R = 6371;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(a));
+    };
+
+    const classifyCenterType = (name = "", types = []) => {
+      const text = `${name} ${(types || []).join(" ")}`.toLowerCase();
+      if (/(abortion|planned parenthood|reproductive health)/i.test(text)) return "abortion";
+      if (/(women|woman|obgyn|gyne|female)/i.test(text)) return "women";
+      if (/(period|menstrual|feminine hygiene|sanitary|tampon|pad|donation)/i.test(text)) return "period";
+      return "women";
+    };
+
+    const normalizePlace = (p) => {
+      const plat = Number(p?.geometry?.location?.lat);
+      const plng = Number(p?.geometry?.location?.lng);
+      if (!Number.isFinite(plat) || !Number.isFinite(plng)) return null;
+
+      return {
+        id: p.place_id,
+        name: p.name || "Health center",
+        address: p.vicinity || "",
+        lat: plat,
+        lng: plng,
+        type: classifyCenterType(p.name, p.types),
+        distanceKm: haversineKm(lat, lng, plat, plng),
+      };
+    };
+
+    const seenIds = new Set();
+    const places = [];
+
+    if (process.env.PLACES_API_KEY) {
+      const radius = 25000;
+      const queries = [
+        "period product donation center",
+        "women's health clinic",
+        "abortion clinic",
+      ];
+
+      for (const keyword of queries) {
+        const url =
+          `https://maps.googleapis.com/maps/api/place/nearbysearch/json` +
+          `?location=${lat},${lng}` +
+          `&radius=${radius}` +
+          `&keyword=${encodeURIComponent(keyword)}` +
+          `&key=${process.env.PLACES_API_KEY}`;
+
+        const r = await fetch(url);
+        if (!r.ok) continue;
+        const data = await r.json();
+        const rows = Array.isArray(data?.results) ? data.results : [];
+
+        for (const row of rows) {
+          const normalized = normalizePlace(row);
+          if (!normalized) continue;
+          if (seenIds.has(normalized.id)) continue;
+          seenIds.add(normalized.id);
+          places.push(normalized);
+        }
+      }
+    }
+
+    if (places.length === 0) {
+      const fallback = await Location.find().lean();
+      for (const c of fallback) {
+        const plat = Number(c?.coordinates?.latitude);
+        const plng = Number(c?.coordinates?.longitude);
+        if (!Number.isFinite(plat) || !Number.isFinite(plng)) continue;
+
+        const distanceKm = haversineKm(lat, lng, plat, plng);
+        if (distanceKm > 80) continue;
+
+        places.push({
+          id: String(c?._id || `${plat}-${plng}`),
+          name: c?.name || "Health center",
+          address: [c?.address?.street, c?.address?.city, c?.address?.state].filter(Boolean).join(", "),
+          lat: plat,
+          lng: plng,
+          type: classifyCenterType(c?.name, c?.acceptedItems || []),
+          distanceKm,
+        });
+      }
+    }
+
+    places.sort((a, b) => a.distanceKm - b.distanceKm);
+
+    return res.json({
+      ok: true,
+      centers: places.slice(0, 30),
+    });
+  } catch (e) {
+    console.error("NEARBY CENTERS ERROR:", e);
+    return res.status(500).json({ error: e?.message || "Failed to load nearby centers" });
+  }
+});
+
 // Submit donation for approval (stores in MongoDB)
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
@@ -925,20 +1037,7 @@ app.get("/locations", async (req, res) => {
 // Start
 // --------------------
 connectMongo().then(() => {
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on http://0.0.0.0:${PORT}`);
-});
-});
-
-
-// -------------------------------
-// Connecting locations from Mongo
-// -------------------------------
-app.get("/locations", async (req, res) => {
-  try {
-    const locations = await Location.find();
-    res.json(locations);
-  } catch (err) {
-    res.status(500).json({ error: "Failed to fetch locations" });
-  }
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
+  });
 });
