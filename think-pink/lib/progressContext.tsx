@@ -69,7 +69,12 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
     setImpactBadgeMintedState(im);
 
     setPointsState(p);
-    setLifetimePointsState(Math.max(lp, p));
+    // Reset lifetime points to current points on app refresh.
+    const resetLifetime = p;
+    setLifetimePointsState(resetLifetime);
+    if (lp !== resetLifetime) {
+      await setLifetimePoints(resetLifetime);
+    }
   }
 
   async function setCycleBadgeUnlockedLive(v: boolean) {

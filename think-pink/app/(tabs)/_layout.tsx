@@ -98,19 +98,25 @@ export default function TabsLayout() {
     <View style={styles.root}>
       <Tabs
         screenOptions={{
-          sceneStyle: { backgroundColor: "#FFF" },
+          sceneStyle: { backgroundColor: "#FFF", paddingTop: 98 },
 
           /* ---------- HEADER ---------- */
           headerTitle: () => (
-            <View style={isHome ? styles.headerHome : styles.headerCentered}>
+            <View
+              style={[
+                isHome ? styles.headerHome : styles.headerCentered,
+                routeName === "badges" ? styles.headerLifted : null,
+              ]}
+            >
               <Text style={styles.logo}>{titleMap[routeName]}</Text>
               {isHome && <AccountButton />}
             </View>
           ),
 
           headerBackground: () => <AnimatedHeader routeName={routeName} />,
+          headerTransparent: true,
           headerTitleAlign: isHome ? "left" : "center",
-          headerStyle: { backgroundColor: "#FFF" },
+          headerStyle: { backgroundColor: "transparent" },
           headerTintColor: "#fff",
 
           /* ---------- TAB BAR ---------- */
@@ -219,6 +225,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     width: "100%",
+  },
+  headerLifted: {
+    marginTop: -14,
   },
 
   logo: {
