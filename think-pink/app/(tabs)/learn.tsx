@@ -491,13 +491,22 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFF",
   },
   content: {
-    padding: 16,
-    gap: 12,
-    paddingBottom: 110,
+    flexGrow: 1,
+    padding: 25,
+    paddingTop: 50,
+    paddingBottom: 80, // ensures content stops above tab bar
+    gap: 18,
+    backgroundColor: "#fff",
+  },
+  panel: {
+    marginTop: 12,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#F2B7CC",
   },
   panelBody: {
-    gap: 12,
-    marginTop: 8,
+    gap: 25,
   },
   infoCard: {
     backgroundColor: "#FFF",

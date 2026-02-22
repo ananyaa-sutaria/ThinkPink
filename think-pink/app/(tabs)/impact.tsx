@@ -257,7 +257,7 @@ export default function ImpactScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: "#FFF" }}
-      contentContainerStyle={{ padding: 16, paddingTop: 24, gap: 12, paddingBottom: 110 }}
+      contentContainerStyle={styles.content}
     >
       <View style={styles.card}>
         <Text style={styles.hint}>Find menstrual product donation centers near you and log your donations here</Text>
@@ -306,7 +306,7 @@ export default function ImpactScreen() {
       </View>
 
       <Modal visible={donateOpen} animationType="slide" onRequestClose={() => setDonateOpen(false)}>
-        <View style={{ flex: 1, backgroundColor: "#FFF", padding: 16, justifyContent: "center" }}>
+        <View style={{ flexGrow: 1, backgroundColor: "#FFF", padding: 25, paddingTop: 40, paddingBottom: 80, justifyContent: "center" }}>
           <ScrollView style={{ maxHeight: "86%" }} contentContainerStyle={{ gap: 12, paddingBottom: 10 }}>
             <View style={styles.card}>
               <Text style={styles.title}>Impact</Text>
@@ -399,7 +399,7 @@ export default function ImpactScreen() {
                 style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
               >
                 <Text style={styles.sectionTitle}>My submissions</Text>
-                <Text style={{ color: "#D81B60", fontWeight: "700" }}>{submissionsOpen ? "Hide" : "Show"}</Text>
+                <Text style={{ color: "#BA5D84", fontWeight: "700" }}>{submissionsOpen ? "Hide" : "Show"}</Text>
               </Pressable>
 
               {submissionsOpen ? (
@@ -424,7 +424,7 @@ export default function ImpactScreen() {
             </View>
 
             <Pressable onPress={() => setDonateOpen(false)} style={styles.backBtn}>
-              <Text style={{ color: "#D81B60" }}>Close</Text>
+              <Text style={{ color: "#BA5D84" }}>Close</Text>
             </Pressable>
           </ScrollView>
         </View>
@@ -435,6 +435,14 @@ export default function ImpactScreen() {
 }
 
 const styles = StyleSheet.create({
+  content: {
+    flexGrow: 1,
+    padding: 25,
+    paddingTop: 40,
+    paddingBottom: 80, // ensures content stops above tab bar
+    gap: 18,
+    backgroundColor: "#fff",
+  },
   card: {
     backgroundColor: "#FFF",
     borderRadius: 10,
@@ -523,7 +531,7 @@ function NativeMap({ coords, centers }: { coords: { lat: number; lng: number }; 
   const pinColorFor = (type?: NearbyCenter["type"]) => {
     if (type === "abortion") return "#8E24AA";
     if (type === "women") return "#EC407A";
-    return "#D81B60";
+    return "#BA5D84";
   };
 
   return (

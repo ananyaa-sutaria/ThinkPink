@@ -189,11 +189,12 @@ export default function LogChatScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 110,
-    gap: 12,
+    flexGrow: 1,
+    padding: 25,
+    paddingTop: 40,
+    paddingBottom: 80, // ensures content stops above tab bar
+    gap: 25,
+    backgroundColor: "#fff",
   },
   helperCard: {
     backgroundColor: "#FFF",

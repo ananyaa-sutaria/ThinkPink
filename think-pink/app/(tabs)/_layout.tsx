@@ -51,7 +51,7 @@ function AnimatedHeader({ routeName }: { routeName: string }) {
   useEffect(() => {
     scale.value = 2; // start bigger for animation
     scale.value = withTiming(1, {
-      duration: 450,
+      duration: 800,
       easing: Easing.out(Easing.exp),
     });
   }, [routeName]);

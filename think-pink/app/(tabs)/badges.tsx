@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { View, Text, Pressable, Linking, ScrollView, Alert, StyleSheet } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
+import { Image } from "react-native";
 
 import { useProgress } from "../../lib/progressContext";
 import { awardBadge } from "../../lib/solanaClient";
@@ -165,24 +166,53 @@ async function openExternal(rawUrl: string) {
   }, [user]);
 
   const cycleBadgeStatus = useMemo(() => {
-    if (cycleBadgeMinted) return { label: "Minted", color: "#2E7D32" };
-    if (cycleBadgeUnlocked) return { label: "Unlocked", color: "#D81B60" };
+    if (cycleBadgeMinted) return { label: "Minted", color: "#efcfe3" };
+    if (cycleBadgeUnlocked) return { label: "Unlocked", color: "#b3dee2" };
     return { label: "Locked", color: "#8E8E8E" };
   }, [cycleBadgeUnlocked, cycleBadgeMinted]);
 
   const impactBadgeStatus = useMemo(() => {
-    if (impactBadgeMinted) return { label: "Minted", color: "#2E7D32" };
-    if (impactBadgeUnlocked) return { label: "Unlocked", color: "#D81B60" };
+    if (impactBadgeMinted) return { label: "Minted", color: "#efcfe3" };
+    if (impactBadgeUnlocked) return { label: "Unlocked", color: "#b3dee2" };
     return { label: "Locked", color: "#8E8E8E" };
   }, [impactBadgeUnlocked, impactBadgeMinted]);
 
   const statusLevel = useMemo(() => {
-    if (lifetimePoints <= 100) return { name: "Jellyfish", icon: "🪼", nextAt: 200 };
-    if (lifetimePoints <= 200) return { name: "Seahorse", icon: "🐠", nextAt: 300 };
-    if (lifetimePoints <= 300) return { name: "Manatee", icon: "🦭", nextAt: 400 };
-    if (lifetimePoints <= 400) return { name: "Stingray", icon: "🐟", nextAt: 500 };
-    return { name: "Dolphin", icon: "🐬", nextAt: null as number | null };
+    if (lifetimePoints <= 100)
+      return {
+        name: "Jellyfish",
+        icon: require("../../components/icons/jellyf.png"),
+        nextAt: 200,
+      };
+
+    if (lifetimePoints <= 200)
+      return {
+        name: "Seahorse",
+        icon: require("../../components/icons/seahorse.png"),
+        nextAt: 300,
+      };
+
+    if (lifetimePoints <= 300)
+      return {
+        name: "Manatee",
+        icon: require("../../components/icons/manatee.png"),
+        nextAt: 400,
+      };
+
+    if (lifetimePoints <= 400)
+      return {
+        name: "Stingray",
+        icon: require("../../components/icons/stingray.png"),
+        nextAt: 500,
+      };
+
+    return {
+      name: "Dolphin",
+      icon: require("../../components/icons/dolphin.png"),
+      nextAt: null as number | null,
+    };
   }, [lifetimePoints]);
+
 
   const pointsToNext = useMemo(() => {
     if (!statusLevel.nextAt) return 0;
@@ -192,10 +222,10 @@ async function openExternal(rawUrl: string) {
   const quizLevel2Unlocked = completedQuizLevels.includes(2);
   const quizLevel3Unlocked = completedQuizLevels.includes(3);
   const quizLevel2Status = quizLevel2Unlocked
-    ? { label: "Unlocked", color: "#D81B60" }
+    ? { label: "Unlocked", color: "#b3dee2" }
     : { label: "Locked", color: "#8E8E8E" };
   const quizLevel3Status = quizLevel3Unlocked
-    ? { label: "Unlocked", color: "#D81B60" }
+    ? { label: "Unlocked", color: "#b3dee2" }
     : { label: "Locked", color: "#8E8E8E" };
 
   const incompleteBadges = useMemo(() => {
@@ -361,7 +391,7 @@ async function openExternal(rawUrl: string) {
       contentContainerStyle={styles.content}
     >
       <View style={[styles.card, styles.statusCard]}>
-        <Text style={styles.statusIcon}>{statusLevel.icon}</Text>
+        <Image source={statusLevel.icon} style={styles.statusIcon} />
         <View style={{ flex: 1 }}>
           <Text style={styles.statusTitle}>Status: {statusLevel.name}</Text>
           <View style={styles.statusRow}>
@@ -568,7 +598,14 @@ async function openExternal(rawUrl: string) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#FFF" },
-  content: { padding: 16, gap: 12, paddingBottom: 110 },
+  content: {
+    flexGrow: 1,
+    padding: 25,
+    paddingTop: 40,
+    paddingBottom: 80, // ensures content stops above tab bar
+    gap: 18,
+    backgroundColor: "#fff",
+  },
   card: {
     backgroundColor: "#FFF",
     borderRadius: 10,
@@ -583,16 +620,20 @@ const styles = StyleSheet.create({
   },
   badgeCardBlue: { backgroundColor: "#D8ECF0" },
   statusCard: { flexDirection: "row", alignItems: "center", gap: 12 },
-  statusIcon: { fontSize: 36 },
+  statusIcon: {
+    width: 36,
+    height: 36,
+    resizeMode: "contain",
+  },
   statusTitle: { color: "#250921", fontFamily: "Onest-Bold", fontSize: 34 / 2 },
-  statusRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8, marginTop: 3 },
-  lifetimePoints: { color: "#D81B60", fontFamily: "Onest-Bold", fontSize: 14 },
+  statusRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8, },
+  lifetimePoints: { color: "#BA5D84", fontFamily: "Onest-Bold", fontSize: 14 },
   pointsToNext: { color: "#555", fontFamily: "Onest", fontSize: 12 },
   sectionLabel: { color: "#333", fontFamily: "Onest", fontSize: 14 },
-  balanceText: { color: "#D81B60", fontFamily: "Onest-Bold", fontSize: 30 },
+  balanceText: { color: "#BA5D84", fontFamily: "Onest-Bold", fontSize: 30 },
   subText: { color: "#555", fontFamily: "Onest", fontSize: 14 },
   rowWrap: { flexDirection: "row", gap: 10, flexWrap: "wrap" },
-  badgeTitle: { color: "#250921", fontFamily: "Onest-Bold", fontSize: 24 / 2 },
+  badgeTitle: { color: "#250921", fontFamily: "Onest-Bold", fontSize: 16 },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   incompleteRow: {
     backgroundColor: "#FDECEF",
@@ -611,7 +652,7 @@ const styles = StyleSheet.create({
   primaryBtnDisabled: { backgroundColor: "#F48FB1" },
   primaryBtnText: { color: "#FFF", fontFamily: "Onest-Bold", fontSize: 18 / 1.25 },
   primaryPillBtn: {
-    backgroundColor: "#D81B60",
+    backgroundColor: "#BA5D84",
     borderRadius: 999,
     paddingVertical: 10,
     paddingHorizontal: 14,
@@ -631,11 +672,11 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   secondaryPillBtnText: { color: "#333", fontFamily: "Onest-Bold", fontSize: 14 },
-  tipBox: { backgroundColor: "#FDECEF", padding: 12, borderRadius: 16, gap: 6 },
+  tipBox: { backgroundColor: "#FDECEF", borderRadius: 16, gap: 6 },
   tipText: { color: "#333", fontFamily: "Onest", fontSize: 14 },
-  okBox: { backgroundColor: "#E8F5E9", padding: 12, borderRadius: 16 },
+  okBox: { backgroundColor: "#E8F5E9", borderRadius: 16 },
   okText: { color: "#2E7D32", fontFamily: "Onest-Bold", fontSize: 14 },
-  linkText: { color: "#D81B60", fontFamily: "Onest-Bold", fontSize: 14 },
+  linkText: { color: "#BA5D84", fontFamily: "Onest-Bold", fontSize: 14 },
   footerNote: { color: "#777", fontFamily: "Onest", fontSize: 12 },
   badgePill: {
     paddingHorizontal: 10,
