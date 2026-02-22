@@ -956,9 +956,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
   },
   streakBadge: {
-    minWidth: 58,
-    height: 58,
-    borderRadius: 30,
+    minWidth: 46,
+    height: 46,
+    borderRadius: 23,
     backgroundColor: "#FDECEF",
     borderWidth: 1,
     borderColor: "#F2B7CC",
@@ -968,13 +968,13 @@ const styles = StyleSheet.create({
   streakBadgeTop: {
     color: "#250921",
     fontFamily: "Onest",
-    fontSize: 10,
+    fontSize: 8,
   },
   streakBadgeNum: {
     color: "#000",
     fontFamily: "Onest-Bold",
-    fontSize: 18,
-    lineHeight: 20,
+    fontSize: 14,
+    lineHeight: 16,
   },
   streakMetaInline: {
     color: "#555",

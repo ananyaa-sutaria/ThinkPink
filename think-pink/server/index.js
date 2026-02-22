@@ -330,10 +330,18 @@ app.post("/solana/redeem-points", async (req, res) => {
     if (!Number.isFinite(cost) || cost <= 0) return res.status(400).json({ error: "pointsCost must be > 0" });
 
     const recipient = new PublicKey(String(walletAddress).trim());
-    const row = await UserPoints.findOne({ userId });
-    const currentPoints = Number(row?.points || 0);
+    const [userPointsRow, userRow] = await Promise.all([
+      UserPoints.findOne({ userId }),
+      User.findOne({ userId }).lean(),
+    ]);
+    const userPointsBalance = Number(userPointsRow?.points || 0);
+    const userBalance = Number(userRow?.points || 0);
+    const currentPoints = Math.max(userPointsBalance, userBalance);
     if (currentPoints < cost) {
-      return res.status(400).json({ error: "Not enough points" });
+      return res.status(400).json({
+        error: "Not enough points",
+        pointsAvailable: currentPoints,
+      });
     }
 
     const lamportsPerPoint = Number(process.env.REDEEM_LAMPORTS_PER_POINT || 10000); // 0.00001 SOL/point
@@ -351,25 +359,26 @@ app.post("/solana/redeem-points", async (req, res) => {
       commitment: "confirmed",
     });
 
-    const after = await UserPoints.findOneAndUpdate(
-      { userId, points: { $gte: cost } },
-      { $inc: { points: -cost } },
-      { new: true }
-    );
-
-    if (!after) {
-      return res.status(409).json({ error: "Points changed during redemption. Try again." });
-    }
-
-    // Keep User.points roughly in sync where it exists.
-    await User.updateOne({ userId }, { $inc: { points: -cost } });
+    const nextPoints = Math.max(0, currentPoints - cost);
+    await Promise.all([
+      UserPoints.findOneAndUpdate(
+        { userId },
+        { $set: { points: nextPoints } },
+        { new: true, upsert: true }
+      ),
+      User.updateOne(
+        { userId },
+        { $set: { points: nextPoints } },
+        { upsert: false }
+      ),
+    ]);
 
     return res.json({
       ok: true,
       signature,
       explorer: `https://explorer.solana.com/tx/${signature}?cluster=${CLUSTER}`,
       pointsSpent: cost,
-      pointsAfter: Number(after.points || 0),
+      pointsAfter: nextPoints,
       lamportsSent: lamports,
       solSent: lamports / 1_000_000_000,
     });
@@ -787,6 +796,32 @@ app.get("/points/:userId", async (req, res) => {
     res.json({ ok: true, points: Number(u.points || 0) });
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+app.post("/points/add", async (req, res) => {
+  try {
+    const { userId, delta } = req.body || {};
+    const uid = String(userId || "").trim();
+    const inc = Number(delta);
+    if (!uid) return res.status(400).json({ error: "userId required" });
+    if (!Number.isFinite(inc)) return res.status(400).json({ error: "delta must be a number" });
+
+    const [u] = await Promise.all([
+      User.findOneAndUpdate({ userId: uid }, { $inc: { points: inc } }, { new: true }),
+      UserPoints.findOneAndUpdate({ userId: uid }, { $inc: { points: inc } }, { upsert: true, new: true }),
+    ]);
+
+    if (!u) return res.status(404).json({ error: "user not found" });
+    const points = Math.max(0, Number(u.points || 0));
+    if (points !== Number(u.points || 0)) {
+      await User.updateOne({ userId: uid }, { $set: { points } });
+      await UserPoints.updateOne({ userId: uid }, { $set: { points } });
+    }
+
+    return res.json({ ok: true, points });
+  } catch (e) {
+    return res.status(500).json({ error: String(e?.message || e) });
   }
 });
 app.post("/impact/places-autocomplete", async (req, res) => {
