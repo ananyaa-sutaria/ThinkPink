@@ -27,6 +27,7 @@ type Submission = {
   locationLat?: number;
   locationLng?: number;
   photoUrl?: string;
+  imageUrl?: string;
   proofHash?: string;
   status: "pending" | "approved" | "rejected";
   impactMint?: string;
@@ -82,23 +83,18 @@ export default function BadgesRewardsScreen() {
   const [impactCardOpen, setImpactCardOpen] = useState(false);
   const [completedQuizLevels, setCompletedQuizLevels] = useState<number[]>([]);
 
-  async function openExternal(rawUrl: string) {
-    if (!rawUrl) {
-      Alert.alert("Link unavailable", "No link found for this item yet.");
-      return;
-    }
-
-    try {
-      const supported = await Linking.canOpenURL(rawUrl);
-      if (!supported) {
-        Alert.alert("Cannot open link", rawUrl);
-        return;
-      }
-      await Linking.openURL(rawUrl);
-    } catch {
-      Alert.alert("Cannot open link", rawUrl);
-    }
+async function openExternal(rawUrl: string) {
+  if (!rawUrl) {
+    Alert.alert("Link unavailable", "No link found for this item yet.");
+    return;
   }
+
+  try {
+    await Linking.openURL(rawUrl);
+  } catch {
+    Alert.alert("Cannot open link", rawUrl);
+  }
+}
 
   useEffect(() => {
     (async () => {
@@ -454,8 +450,8 @@ export default function BadgesRewardsScreen() {
                       : impactSubtitle}
                   </Text>
 
-                  {impactLatest?.photoUrl ? (
-                    <Pressable onPress={() => openExternal(absolutePhotoUrl(impactLatest.photoUrl))}>
+                  {impactLatest?.photoUrl || impactLatest?.imageUrl ? (
+                    <Pressable onPress={() => openExternal(absolutePhotoUrl(impactLatest.photoUrl || impactLatest.imageUrl))}>
                       <Text style={styles.linkText}>View uploaded photo</Text>
                     </Pressable>
                   ) : null}

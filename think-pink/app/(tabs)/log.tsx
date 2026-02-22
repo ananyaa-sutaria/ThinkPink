@@ -149,7 +149,7 @@ export default function LogChatScreen() {
               {m.role === "assistant" ? (
                 renderAssistantRichText(m.text)
               ) : (
-                <Text style={{ color: "#333", fontSize: 15, lineHeight: 21 }}>{m.text}</Text>
+                <Text style={{ color: "#333", fontSize: 16, lineHeight: 22 }}>{m.text}</Text>
               )}
             </View>
           ))}
@@ -225,8 +225,8 @@ const styles = StyleSheet.create({
   },
   assistantText: {
     color: "#333",
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: 16,
+    lineHeight: 22,
     fontFamily: "Onest",
   },
   emphasisWord: {
@@ -255,7 +255,7 @@ const styles = StyleSheet.create({
   input: {
     color: "#333",
     fontFamily: "Onest",
-    fontSize: 12,
+    fontSize: 14,
     paddingVertical: 10,
   },
 });

@@ -128,6 +128,9 @@ export default function TabsLayout() {
             height: 60,
             position: "absolute",
           },
+          tabBarItemStyle: {
+            marginTop: -1,
+          },
           tabBarActiveTintColor: "#A40E4C",
           tabBarInactiveTintColor: "#C7547F",
         }}
@@ -171,7 +174,7 @@ export default function TabsLayout() {
         <Tabs.Screen
           name="log"
           options={{
-            title: "Log",
+            title: "My Flow",
             tabBarIcon: ({ focused }) => (
               <Image
                 source={require("../../components/icons/bedtime-rounded.png")}

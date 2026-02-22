@@ -1015,9 +1015,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#250921",
   },
-  addIcon: { width: 30, height: 20 },
+  addIcon: { width: 24, height: 16 },
   calendar: {
     borderRadius: 15,
+    width: "96%",
+    alignSelf: "center",
   },
   legendRow: {
     marginTop: 8,
