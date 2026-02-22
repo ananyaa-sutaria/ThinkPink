@@ -117,21 +117,21 @@ export default function LogChatScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <View style={styles.container}>
-        <View style={styles.helperCard}>
-          <Text style={styles.helperText}>
-            Ask the chat about anything you may have questions about such as your history, how you were feeling, etc.
-          </Text>
-          <Text style={styles.helperDisclaimer}>
-            <Text style={styles.helperDisclaimerBold}>We do not offer medical advice.</Text> We provide data insights
-            to support conversations with healthcare providers.
-          </Text>
-        </View>
-
         <ScrollView
           ref={scrollRef}
           style={styles.chatList}
           contentContainerStyle={styles.chatListContent}
         >
+          <View style={styles.helperCard}>
+            <Text style={styles.helperText}>
+              Ask the chat about anything you may have questions about such as your history, how you were feeling, etc.
+            </Text>
+            <Text style={styles.helperDisclaimer}>
+              <Text style={styles.helperDisclaimerBold}>We do not offer medical advice.</Text> We provide data insights
+              to support conversations with healthcare providers.
+            </Text>
+          </View>
+
           {messages.map((m) => (
             <View
               key={m.id}
@@ -210,8 +210,8 @@ const styles = StyleSheet.create({
   helperText: {
     color: "#2D2230",
     fontFamily: "Onest",
-    fontSize: 15,
-    lineHeight: 21,
+    fontSize: 14,
+    lineHeight: 20,
   },
   helperDisclaimer: {
     color: "#555",
@@ -225,8 +225,8 @@ const styles = StyleSheet.create({
   },
   assistantText: {
     color: "#333",
-    fontSize: 15.5,
-    lineHeight: 24,
+    fontSize: 14,
+    lineHeight: 21,
     fontFamily: "Onest",
   },
   emphasisWord: {
@@ -255,7 +255,7 @@ const styles = StyleSheet.create({
   input: {
     color: "#333",
     fontFamily: "Onest",
-    fontSize: 13,
+    fontSize: 12,
     paddingVertical: 10,
   },
 });
