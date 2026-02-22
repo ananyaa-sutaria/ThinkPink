@@ -233,7 +233,8 @@ const enrichedSnapshot = {
       });
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-3-pro-preview" });
+    const hasGeminiKey = !!process.env.GEMINI_API_KEY;
+    const modelName = process.env.GEMINI_CHAT_MODEL || "gemini-1.5-flash";
 
     const prompt = `
 You are ThinkPink, a supportive cycle + nutrition assistant.
@@ -253,10 +254,28 @@ USER QUESTION:
 ${message}
 `;
 
-    const result = await model.generateContent(prompt);
-    const answer = result.response.text().trim();
-   
-    res.json({ answer });
+    // Fallback path if Gemini is not configured.
+    if (!hasGeminiKey) {
+      const fallback =
+        enrichedSnapshot.lastPeriodStartISO
+          ? `I can use your logs to help with patterns. Your most recent logged period start was ${enrichedSnapshot.lastPeriodStartISO}.`
+          : "I can help summarize your logged patterns, but I need more cycle logs to answer this precisely.";
+      return res.json({ answer: fallback });
+    }
+
+    try {
+      const model = genAI.getGenerativeModel({ model: modelName });
+      const result = await model.generateContent(prompt);
+      const answer = result.response.text().trim();
+      return res.json({ answer });
+    } catch (modelErr) {
+      console.error("CYCLE CHAT MODEL ERROR:", modelErr);
+      const fallback =
+        enrichedSnapshot.lastPeriodStartISO
+          ? `I couldn’t run the full assistant right now, but your latest logged period start is ${enrichedSnapshot.lastPeriodStartISO}.`
+          : "I couldn’t run the full assistant right now. Please try again, and make sure your cycle logs are saved.";
+      return res.json({ answer: fallback });
+    }
   } catch (e) {
     console.error("CYCLE CHAT ERROR:", e);
     res.status(500).json({ error: String(e?.message || e) });
