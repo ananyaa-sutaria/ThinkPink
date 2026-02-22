@@ -60,6 +60,7 @@ export default function LearnScreen() {
     if (s >= PASS_SCORE) {
       setUnlocked(true);
       await setCycleBadgeUnlockedLive(true);
+      
       await addPoints(100);
     }
   }
